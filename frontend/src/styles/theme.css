@@ -1,0 +1,778 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════
+   AGENTIC DEBATE ARENA — Precision Research Design System
+   Visual Language: Explainable, provable AI reasoning board
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Theme Tokens ───────────────────────────────────────── */
+:root,
+[data-theme="obsidian"] {
+  --bg-main:       #0d0f12;
+  --bg-surface:    #14181f;
+  --bg-elevated:   #1a202a;
+  --bg-subtle:     #11141a;
+
+  --border:        #232b36;
+  --border-strong: #333d4d;
+  --border-hi:     #475569;
+
+  --ink-primary:   #f8fafc;
+  --ink-secondary: #94a3b8;
+  --ink-faint:     #64748b;
+  --ink-inverted:  #0f172a;
+
+  /* Agent A: Cold Cyan / Ice Blue */
+  --agent-a:       #38bdf8;
+  --agent-a-dim:   rgba(56, 189, 248, 0.08);
+  --agent-a-border:rgba(56, 189, 248, 0.35);
+
+  /* Agent B: Warm Copper / Amber */
+  --agent-b:       #fbbf24;
+  --agent-b-dim:   rgba(251, 191, 36, 0.08);
+  --agent-b-border:rgba(251, 191, 36, 0.35);
+
+  /* Status Ring & Radiant Hairline Theme Variables */
+  --gold:          #fbbf24;
+  --proposer:      #38bdf8;
+  --opponent:      #fbbf24;
+
+  /* Semantic Alerts */
+  --valid:         #34d399;
+  --valid-dim:     rgba(52, 211, 153, 0.1);
+  --valid-border:  rgba(52, 211, 153, 0.3);
+
+  --contra:        #f87171;
+  --contra-dim:    rgba(248, 113, 113, 0.1);
+  --contra-border: rgba(248, 113, 113, 0.4);
+
+  /* Fonts */
+  --serif:         'Fraunces', Georgia, serif;
+  --sans:          'Inter', -apple-system, sans-serif;
+  --mono:          'JetBrains Mono', Consolas, monospace;
+
+  /* Canvas Graph Particles */
+  --graph-edge:    148, 163, 184;
+  --graph-node:    248, 250, 252;
+}
+
+[data-theme="academic"] {
+  --bg-main:       #0e0d0b;
+  --bg-surface:    #161512;
+  --bg-elevated:   #1e1c18;
+  --bg-subtle:     #13120e;
+
+  --border:        #2c2a24;
+  --border-strong: #42402f;
+  --border-hi:     #6b6858;
+
+  --ink-primary:   #eae5d8;
+  --ink-secondary: #b3ac97;
+  --ink-faint:     #6b6858;
+  --ink-inverted:  #0e0d0b;
+
+  --agent-a:       #7d9bb0;
+  --agent-a-dim:   rgba(125, 155, 176, 0.1);
+  --agent-a-border:rgba(125, 155, 176, 0.35);
+
+  --agent-b:       #d1a256;
+  --agent-b-dim:   rgba(209, 162, 86, 0.1);
+  --agent-b-border:rgba(209, 162, 86, 0.35);
+
+  --gold:          #d1a256;
+  --proposer:      #7d9bb0;
+  --opponent:      #d1a256;
+
+  --valid:         #9ab26e;
+  --valid-dim:     rgba(154, 178, 110, 0.12);
+  --valid-border:  rgba(154, 178, 110, 0.35);
+
+  --contra:        #c65a4a;
+  --contra-dim:    rgba(198, 90, 74, 0.12);
+  --contra-border: rgba(198, 90, 74, 0.4);
+
+  --serif:         'Fraunces', Georgia, serif;
+  --sans:          'Inter', -apple-system, sans-serif;
+  --mono:          'JetBrains Mono', Consolas, monospace;
+
+  --graph-edge:    209, 162, 86;
+  --graph-node:    234, 229, 216;
+}
+
+[data-theme="terminal"] {
+  --bg-main:       #080a0c;
+  --bg-surface:    #101418;
+  --bg-elevated:   #181e24;
+  --bg-subtle:     #0c0f13;
+
+  --border:        #1f2933;
+  --border-strong: #323f4b;
+  --border-hi:     #4b6075;
+
+  --ink-primary:   #e4e7eb;
+  --ink-secondary: #9aa5b1;
+  --ink-faint:     #616e7c;
+  --ink-inverted:  #080a0c;
+
+  --agent-a:       #38bec9;
+  --agent-a-dim:   rgba(56, 190, 201, 0.1);
+  --agent-a-border:rgba(56, 190, 201, 0.35);
+
+  --agent-b:       #f6ad55;
+  --agent-b-dim:   rgba(246, 173, 85, 0.1);
+  --agent-b-border:rgba(246, 173, 85, 0.35);
+
+  --gold:          #f6ad55;
+  --proposer:      #38bec9;
+  --opponent:      #f6ad55;
+
+  --valid:         #48bb78;
+  --valid-dim:     rgba(72, 187, 120, 0.12);
+  --valid-border:  rgba(72, 187, 120, 0.35);
+
+  --contra:        #f56565;
+  --contra-dim:    rgba(245, 101, 101, 0.12);
+  --contra-border: rgba(245, 101, 101, 0.4);
+
+  --serif:         'Fraunces', Georgia, serif;
+  --sans:          'Inter', -apple-system, sans-serif;
+  --mono:          'JetBrains Mono', Consolas, monospace;
+
+  --graph-edge:    56, 190, 201;
+  --graph-node:    228, 231, 235;
+}
+
+/* ── Base Setup ─────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg-main);
+  color: var(--ink-primary);
+  font-family: var(--sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--agent-a);
+  color: var(--bg-main);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-main); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hi); }
+
+/* ── Animations ─────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes titleIn {
+  from { opacity: 0; transform: translateY(20px); filter: blur(4px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@keyframes flicker {
+  0%   { opacity: 0; }
+  30%  { opacity: 1; }
+  55%  { opacity: 0.2; }
+  80%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+@keyframes contradictionAlert {
+  0%, 100% { border-color: var(--contra-border); box-shadow: 0 0 0 0 transparent; }
+  50%       { border-color: var(--contra); box-shadow: 0 0 24px var(--contra-dim); }
+}
+
+.anim-fade-up { opacity: 0; animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.anim-title { opacity: 0; }
+.anim-title.reveal { animation: titleIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.derive-line {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  min-height: 20px;
+  opacity: 0;
+}
+.derive-line.show { animation: flicker 0.5s ease forwards; }
+
+.reveal-item {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal-item.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--contra);
+  margin-right: 8px;
+  animation: livePulse 1.8s ease-in-out infinite;
+}
+
+/* ── Status Ring Component ───────────────────────────────── */
+.status-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  background: transparent;
+  transition: transform 120ms ease, box-shadow 0.3s ease, border-color 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
+  z-index: 2;
+}
+
+/* Large size: 28px in card header */
+.status-ring.lg {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--ink-faint);
+}
+
+/* Small size: 12px on spine (visible on all breakpoints) */
+.status-ring.sm {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ink-faint);
+}
+
+.status-ring .ring-core {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+}
+
+/* 1. idle — opacity breathes 0.4 -> 0.7 over 4s ease-in-out infinite */
+@keyframes ringIdleBreathe {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.7; }
+}
+
+.status-ring[data-state="idle"] {
+  border-color: var(--ink-faint);
+  animation: ringIdleBreathe 4s ease-in-out infinite;
+}
+
+/* 2. thinking — conic gradient sweep rotates continuously (1.4s linear infinite) */
+@keyframes ringThinkingRotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.status-ring[data-state="thinking"] {
+  border-color: transparent !important;
+  background: conic-gradient(from 0deg, var(--gold), transparent 70%);
+  animation: ringThinkingRotate 1.4s linear infinite;
+  mask: radial-gradient(circle, transparent 55%, black 56%);
+  -webkit-mask: radial-gradient(circle, transparent 55%, black 56%);
+}
+
+.status-ring.lg[data-state="thinking"] {
+  mask: radial-gradient(circle, transparent 10px, black 11px);
+  -webkit-mask: radial-gradient(circle, transparent 10px, black 11px);
+}
+
+.status-ring.sm[data-state="thinking"] {
+  mask: radial-gradient(circle, transparent 3px, black 4px);
+  -webkit-mask: radial-gradient(circle, transparent 3px, black 4px);
+}
+
+/* 3. speaking — outer glow breathes over 1.1s ease-in-out infinite alternate */
+@keyframes ringSpeakingGlowA {
+  0%   { box-shadow: 0 0 0px transparent; }
+  100% { box-shadow: 0 0 10px var(--proposer); }
+}
+
+@keyframes ringSpeakingGlowB {
+  0%   { box-shadow: 0 0 0px transparent; }
+  100% { box-shadow: 0 0 10px var(--opponent); }
+}
+
+.status-ring[data-state="speaking"][data-agent="a"] {
+  border-color: var(--proposer);
+  animation: ringSpeakingGlowA 1.1s ease-in-out infinite alternate;
+}
+
+.status-ring[data-state="speaking"][data-agent="b"] {
+  border-color: var(--opponent);
+  animation: ringSpeakingGlowB 1.1s ease-in-out infinite alternate;
+}
+
+/* Pulse JS hook (.ring-pulse class applied by ring.pulse()) */
+.status-ring.ring-pulse {
+  transform: scale(1.08) !important;
+}
+
+/* 4. done — one-shot settle animation: scale 1 -> 1.18 -> 1 over 380ms ease-out, static ~30% desaturated fill */
+@keyframes ringDoneSettle {
+  0%   { transform: scale(1); filter: brightness(1); }
+  50%  { transform: scale(1.18); filter: brightness(1.5); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+.status-ring[data-state="done"].settling {
+  animation: ringDoneSettle 380ms ease-out forwards;
+}
+
+.status-ring[data-state="done"][data-agent="a"] {
+  border-color: var(--proposer);
+  background-color: rgba(56, 189, 248, 0.3);
+  box-shadow: none;
+}
+
+.status-ring[data-state="done"][data-agent="b"] {
+  border-color: var(--opponent);
+  background-color: rgba(251, 191, 36, 0.3);
+  box-shadow: none;
+}
+
+/* ── Radiant Hairline Turn Frame & Panel ─────────────────── */
+.turn-frame {
+  padding: 1px;
+  border-radius: 8px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--agent-color) 65%, transparent) 0%,
+    color-mix(in srgb, var(--ink-primary) 6%, transparent) 38%,
+    color-mix(in srgb, var(--ink-primary) 6%, transparent) 65%,
+    color-mix(in srgb, var(--agent-color) 45%, transparent) 100%
+  );
+  box-shadow:
+    0 0 1px color-mix(in srgb, var(--agent-color) 40%, transparent),
+    0 0 36px -6px color-mix(in srgb, var(--agent-color) 55%, transparent),
+    0 0 80px -20px color-mix(in srgb, var(--agent-color) 35%, transparent);
+  transition: box-shadow 0.4s ease, background 0.4s ease;
+  max-width: 440px;
+}
+
+.turn-panel {
+  background: var(--bg-surface);
+  border-radius: 7px;
+  padding: 26px 28px 20px;
+}
+
+/* Set --agent-color per side, reusing existing theme tokens */
+.turn-frame[data-agent="a"] { --agent-color: var(--proposer); }
+.turn-frame[data-agent="b"] { --agent-color: var(--opponent); }
+
+/* State variations for turn-frame */
+@keyframes turnFrameGradientDrift {
+  0%, 100% {
+    background: linear-gradient(
+      155deg,
+      color-mix(in srgb, var(--agent-color) 75%, transparent) 0%,
+      color-mix(in srgb, var(--ink-primary) 8%, transparent) 38%,
+      color-mix(in srgb, var(--ink-primary) 8%, transparent) 65%,
+      color-mix(in srgb, var(--agent-color) 55%, transparent) 100%
+    );
+  }
+  50% {
+    background: linear-gradient(
+      175deg,
+      color-mix(in srgb, var(--agent-color) 85%, transparent) 0%,
+      color-mix(in srgb, var(--ink-primary) 10%, transparent) 42%,
+      color-mix(in srgb, var(--ink-primary) 10%, transparent) 60%,
+      color-mix(in srgb, var(--agent-color) 65%, transparent) 100%
+    );
+  }
+}
+
+.turn-frame[data-state="speaking"] {
+  animation: turnFrameGradientDrift 6s ease-in-out infinite;
+  box-shadow:
+    0 0 1px color-mix(in srgb, var(--agent-color) 50%, transparent),
+    0 0 42px -4px color-mix(in srgb, var(--agent-color) 65%, transparent),
+    0 0 90px -15px color-mix(in srgb, var(--agent-color) 45%, transparent);
+}
+
+/* Once a turn is done: freeze gradient, reduce glow spread by ~40% (36px -> 20px, 80px -> 45px) */
+.turn-frame[data-state="done"] {
+  animation: none;
+  box-shadow:
+    0 0 1px color-mix(in srgb, var(--agent-color) 25%, transparent),
+    0 0 20px -6px color-mix(in srgb, var(--agent-color) 35%, transparent),
+    0 0 45px -20px color-mix(in srgb, var(--agent-color) 20%, transparent);
+}
+
+.turn-frame[data-state="thinking"] {
+  box-shadow:
+    0 0 1px color-mix(in srgb, var(--gold) 40%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--gold) 40%, transparent);
+}
+
+.turn-frame[data-state="idle"] {
+  box-shadow: none;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--border-strong) 40%, transparent) 0%,
+    color-mix(in srgb, var(--ink-primary) 4%, transparent) 50%,
+    color-mix(in srgb, var(--border-strong) 40%, transparent) 100%
+  );
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .status-ring,
+  .status-ring[data-state="idle"],
+  .status-ring[data-state="thinking"],
+  .status-ring[data-state="speaking"],
+  .status-ring[data-state="done"],
+  .turn-frame[data-state="speaking"],
+  .turn-frame {
+    animation: none !important;
+    transform: none !important;
+    mask: none !important;
+    -webkit-mask: none !important;
+    background: transparent !important;
+  }
+  .status-ring[data-state="thinking"] {
+    border-color: var(--gold) !important;
+  }
+  .status-ring[data-state="speaking"][data-agent="a"],
+  .status-ring[data-state="done"][data-agent="a"] {
+    border-color: var(--proposer) !important;
+    background-color: var(--proposer) !important;
+  }
+  .status-ring[data-state="speaking"][data-agent="b"],
+  .status-ring[data-state="done"][data-agent="b"] {
+    border-color: var(--opponent) !important;
+    background-color: var(--opponent) !important;
+  }
+}
+
+/* ── Panel & Card System (Crisp, Technical) ─────────────── */
+.arena-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 18px;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.arena-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+
+.arena-card.card-a {
+  border-left: 3px solid var(--agent-a);
+}
+.arena-card.card-a:hover {
+  border-color: var(--border-strong);
+  border-left-color: var(--agent-a);
+  box-shadow: -4px 0 16px var(--agent-a-dim);
+}
+
+.arena-card.card-b {
+  border-right: 3px solid var(--agent-b);
+}
+.arena-card.card-b:hover {
+  border-color: var(--border-strong);
+  border-right-color: var(--agent-b);
+  box-shadow: 4px 0 16px var(--agent-b-dim);
+}
+
+/* Contradiction card alert */
+.contra-card {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--contra-border);
+  border-radius: 6px;
+  padding: 24px;
+  position: relative;
+  animation: contradictionAlert 2s ease-in-out 2;
+}
+
+.contra-stamp {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-4deg);
+  background-color: var(--bg-main);
+  border: 1.5px solid var(--contra);
+  border-radius: 4px;
+  color: var(--contra);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 14px;
+}
+
+/* ── Precise Buttons ────────────────────────────────────── */
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--ink-primary);
+  color: var(--ink-inverted);
+  border: 1px solid var(--ink-primary);
+  border-radius: 5px;
+  padding: 10px 20px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.btn-action:hover {
+  background-color: var(--ink-secondary);
+  border-color: var(--ink-secondary);
+  transform: translateY(-1px);
+}
+.btn-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: transparent;
+  color: var(--ink-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 9px 18px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-outline:hover {
+  border-color: var(--border-hi);
+  background-color: var(--bg-surface);
+  color: var(--ink-primary);
+  transform: translateY(-1px);
+}
+
+.btn-outline.active {
+  border-color: var(--agent-a);
+  color: var(--agent-a);
+  background-color: var(--agent-a-dim);
+}
+
+.btn-outline:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  color: var(--ink-secondary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-icon:hover {
+  border-color: var(--border-strong);
+  color: var(--ink-primary);
+}
+
+/* ── Inputs & Docket Setup ──────────────────────────────── */
+.docket-container {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 18px;
+  transition: border-color 0.2s ease;
+}
+
+.docket-container:focus-within {
+  border-color: var(--agent-a);
+}
+
+.docket-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink-primary);
+  font-family: var(--serif);
+  font-size: 19px;
+}
+
+.docket-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 16px 7px 10px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.docket-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--ink-primary);
+  transform: translateY(-1px);
+}
+
+.docket-chip .num {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* ── MCTS Trace Cards ───────────────────────────────────── */
+.mcts-cand {
+  flex: 1;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 12px 16px;
+  transition: transform 0.2s ease;
+}
+.mcts-cand:hover { transform: translateY(-2px); }
+
+.mcts-cand.winner {
+  border-color: var(--valid-border);
+  background-color: var(--valid-dim);
+}
+
+/* ── Theme Switcher ─────────────────────────────────────── */
+.theme-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.theme-opt {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.theme-opt:hover { color: var(--ink-secondary); }
+.theme-opt.active {
+  background-color: var(--bg-elevated);
+  color: var(--ink-primary);
+}
+
+/* ── Badges ─────────────────────────────────────────────── */
+.badge-agent-a {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--agent-a);
+}
+
+.badge-agent-b {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--agent-b);
+}
+
+.badge-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.badge-status.valid {
+  color: var(--valid);
+  background-color: var(--valid-dim);
+  border: 1px solid var(--valid-border);
+}
+
+.badge-status.contra {
+  color: var(--contra);
+  background-color: var(--contra-dim);
+  border: 1px solid var(--contra-border);
+}
+
+/* ── Code / Monospace logic ─────────────────────────────── */
+.logic-code {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 6px 12px;
+  color: var(--ink-primary);
+}
+
+/* ── Modal overlay ──────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.modal-dialog {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 1080px;
+  height: 90vh;
+  max-height: 880px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
