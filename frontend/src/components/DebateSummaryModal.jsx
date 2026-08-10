@@ -117,6 +117,50 @@ export default function DebateSummaryModal({ summary, onClose }) {
           {/* TAB 1: COACHING */}
           {activeTab === 'coaching' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              
+              {/* Proposer Agent Strategic Debrief Header Card */}
+              <div className="arena-card card-a" style={{ display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: 'var(--agent-a-dim)', borderColor: 'var(--agent-a-border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--agent-a-border)', paddingBottom: 8 }}>
+                  <Sparkles className="w-4 h-4 text-agentA-primary" style={{ color: 'var(--agent-a)' }} />
+                  <h4 style={{ fontFamily: 'var(--serif)', fontWeight: 600, fontSize: 15, color: 'var(--ink-primary)', margin: 0 }}>
+                    Strategic Debrief by Agent A (Proposer)
+                  </h4>
+                </div>
+
+                {summary.proposer_cornered_analysis && (
+                  <div style={{ backgroundColor: 'var(--bg-main)', padding: 12, borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--contra)', display: 'block', marginBottom: 4 }}>
+                      ⚠️ Proposer Vulnerability & Defense:
+                    </span>
+                    <p style={{ fontSize: 12.5, color: 'var(--ink-primary)', lineHeight: 1.5 }}>
+                      {summary.proposer_cornered_analysis}
+                    </p>
+                  </div>
+                )}
+
+                {summary.opponent_cornered_analysis && (
+                  <div style={{ backgroundColor: 'var(--bg-main)', padding: 12, borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--agent-a)', display: 'block', marginBottom: 4 }}>
+                      🎯 Opponent Cornering Trap:
+                    </span>
+                    <p style={{ fontSize: 12.5, color: 'var(--ink-primary)', lineHeight: 1.5 }}>
+                      {summary.opponent_cornered_analysis}
+                    </p>
+                  </div>
+                )}
+
+                {summary.opponent_escape_route && (
+                  <div style={{ backgroundColor: 'var(--bg-main)', padding: 12, borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--agent-b)', display: 'block', marginBottom: 4 }}>
+                      🚪 Opponent Escape Route (If Cornered):
+                    </span>
+                    <p style={{ fontSize: 12.5, color: 'var(--ink-primary)', lineHeight: 1.5 }}>
+                      {summary.opponent_escape_route}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {filteredCornering.map((cp, idx) => {
                 const isSpokenByB = cp.speaker.includes('Agent B');
                 const defenderName = isSpokenByB ? 'Agent A (Proposer)' : 'Agent B (Opponent)';
@@ -142,6 +186,12 @@ export default function DebateSummaryModal({ summary, onClose }) {
                         <Sparkles className="w-3.5 h-3.5" /> Best Counter-Reply for {defenderName}:
                       </span>
                       <p style={{ fontSize: 13, color: 'var(--ink-primary)', lineHeight: 1.5 }}>{cp.best_reply}</p>
+
+                      {cp.escape_route && (
+                        <p style={{ fontSize: 11.5, color: 'var(--ink-secondary)', marginTop: 8, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                          <strong style={{ color: 'var(--ink-primary)' }}>Escape Tactical Maneuver:</strong> {cp.escape_route}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );

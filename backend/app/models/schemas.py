@@ -71,16 +71,17 @@ class Turn(BaseModel):
 
 
 class CorneringPoint(BaseModel):
-    """A high-risk argument made during debate that could corner a debater, plus its best counter-reply."""
+    """A high-risk argument made during debate that could corner a debater, plus its best counter-reply and escape route."""
     point: str
     speaker: str                 # "Agent A (Proposer)" | "Agent B (Opponent)"
-    risk_level: str              # "CRITICAL VULNERABILITY" | "HIGH THREAT" | "MODERATE THREAT"
+    risk_level: str              # "CRITICAL VULNERABILITY" | "HIGH THREAT" | "TACTICAL CORNER"
     why_dangerous: str
     best_reply: str
+    escape_route: str | None = None
 
 
 class DebateSummary(BaseModel):
-    """Executive summary, tactical coaching, and verdict report of a completed debate."""
+    """Executive summary, tactical cornering analysis, and verdict report authored by Proposer Agent."""
     debate_id: str
     topic: str
     total_turns: int
@@ -90,6 +91,9 @@ class DebateSummary(BaseModel):
     opponent_key_points: list[str]
     total_contradictions: int
     verdict_statement: str
+    proposer_cornered_analysis: str = ""    # Where Proposer can be cornered & defense
+    opponent_cornered_analysis: str = ""    # Where Opponent can be cornered
+    opponent_escape_route: str = ""         # If Opponent is cornered, how Opponent can escape
     cornering_points: list[CorneringPoint] = []
     proposer_full_arguments: list[str] = []
     opponent_full_arguments: list[str] = []

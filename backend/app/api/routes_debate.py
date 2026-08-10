@@ -368,8 +368,104 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
     return None
 
 
+def _parse_summary_json(text: str) -> dict[str, Any]:
+    """Parse JSON output from LLM summary debrief."""
+    try:
+        clean = text.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        if clean.startswith("json"):
+            clean = clean[4:].strip()
+        return json.loads(clean)
+    except Exception:
+        return {}
+
+
+def _generate_proposer_summary_debrief(
+    topic: str,
+    turns: list[Turn],
+    proposer_model: str,
+    winner: str,
+    score_a: float,
+) -> dict[str, Any]:
+    """
+    Call the Proposer Agent's LLM to generate an intense post-debate strategic cornering debrief.
+    Analyzes:
+    1. Where Proposer can be cornered + Proposer's counter-defense.
+    2. Where Opponent can be cornered.
+    3. How Opponent can escape if cornered in that trap.
+    """
+    recent_history = "\n".join([f"Turn #{t.turn_number} ({'Proposer' if t.claim.speaker == 'agent_a' else 'Opponent'}): {t.claim.text}" for t in turns[-8:]])
+
+    prompt = (
+        f"You are Agent A (Proposer), writing the official Post-Debate Strategic Debrief for topic: '{topic}'.\n\n"
+        f"Recent Debate Exchanges:\n{recent_history}\n\n"
+        f"Debate Winner: {winner}.\n\n"
+        f"Perform an intense strategic analysis from the Proposer's perspective. Output JSON format strictly as:\n"
+        f"{{\n"
+        f'  "verdict_statement": "2-sentence executive summary of the debate outcome",\n'
+        f'  "proposer_cornered_analysis": "Specifically where Agent A (Proposer) was or can be cornered by Opponent, and how Proposer can defend",\n'
+        f'  "opponent_cornered_analysis": "Specifically where Agent B (Opponent) gets trapped and cornered by Proposer",\n'
+        f'  "opponent_escape_route": "If Opponent gets cornered there, the exact tactical maneuver/counter Opponent can use to escape",\n'
+        f'  "key_proposer_points": ["Key Point 1", "Key Point 2"],\n'
+        f'  "key_opponent_points": ["Key Point 1", "Key Point 2"]\n'
+        f"}}\n"
+    )
+
+    # 1. Try Groq if Groq model selected
+    if ("versatile" in proposer_model or "instant" in proposer_model or "groq" in proposer_model.lower()) and GROQ_API_KEY:
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
+            res = client.chat.completions.create(
+                model=proposer_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=12.0,
+            )
+            raw = res.choices[0].message.content or ""
+            parsed = _parse_summary_json(raw)
+            if parsed and "proposer_cornered_analysis" in parsed:
+                return parsed
+        except Exception as e:
+            logger.warning(f"Groq summary debrief failed ({e}).")
+
+    # 2. Try NVIDIA if NVIDIA model selected
+    if ("/" in proposer_model or "llama" in proposer_model.lower() or "nemotron" in proposer_model.lower()) and NVIDIA_API_KEY:
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
+            res = client.chat.completions.create(
+                model=proposer_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=12.0,
+            )
+            raw = res.choices[0].message.content or ""
+            parsed = _parse_summary_json(raw)
+            if parsed and "proposer_cornered_analysis" in parsed:
+                return parsed
+        except Exception as e:
+            logger.warning(f"NVIDIA summary debrief failed ({e}).")
+
+    # 3. Fallback to Gemini
+    if GEMINI_API_KEY:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=GEMINI_API_KEY)
+            model = genai.GenerativeModel(GEMINI_MODEL_FALLBACKS[0])
+            res = model.generate_content(prompt)
+            parsed = _parse_summary_json(res.text)
+            if parsed and "proposer_cornered_analysis" in parsed:
+                return parsed
+        except Exception as e:
+            logger.warning(f"Gemini summary debrief failed ({e}).")
+
+    return {}
+
+
 def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
-    """Generate structured DebateSummary object of completed debate session."""
+    """Generate structured DebateSummary object of completed debate session authored by Proposer Agent."""
     topic = session["topic"]
     turns: list[Turn] = session["turns"]
     total_turns = len(turns)
@@ -391,14 +487,34 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
     pro_claims = [t.claim.text for t in turns if t.claim.speaker == "agent_a"]
     opp_claims = [t.claim.text for t in turns if t.claim.speaker == "agent_b"]
 
-    cornering_points = []
+    proposer_model = session.get("proposer_model", "gemini-3.6-flash")
 
-    # Pick the most impactful attack from each side
-    # For opponent's attack: pick the longest/most-developed claim (most likely to corner)
+    # Generate Proposer Agent's Cornering & Escape Debrief
+    debrief = _generate_proposer_summary_debrief(
+        topic=topic,
+        turns=turns,
+        proposer_model=proposer_model,
+        winner=winner,
+        score_a=score_a,
+    )
+
+    p_cornered = debrief.get(
+        "proposer_cornered_analysis",
+        f"Agent A (Proposer) faces risk when Opponent attacks initial implementation costs on '{topic}'. Defense: ground claims in long-term efficiency ROI."
+    )
+    o_cornered = debrief.get(
+        "opponent_cornered_analysis",
+        f"Agent B (Opponent) gets cornered when forced to defend practical feasibility vs efficiency on '{topic}'."
+    )
+    o_escape = debrief.get(
+        "opponent_escape_route",
+        f"If Opponent gets cornered there, Opponent can escape by pivoting to resource constraints and alternative trade-offs."
+    )
+
+    cornering_points = []
     best_opp_attack = max(opp_claims, key=len) if opp_claims else None
     best_pro_attack = max(pro_claims, key=len) if pro_claims else None
 
-    # Check top Opponent attack against Proposer
     if best_opp_attack:
         reb_b = (
             _generate_live_counter_reply(topic, best_opp_attack, "proposer")
@@ -412,10 +528,10 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
                 risk_level="HIGH THREAT",
                 why_dangerous=f"Directly challenges the core viability of the proposer's argument on '{topic}'.",
                 best_reply=reb_b,
+                escape_route=f"Opponent can reinforce this attack by emphasizing systemic risk.",
             )
         )
 
-    # Check top Proposer attack against Opponent
     if best_pro_attack:
         reb_a = (
             _generate_live_counter_reply(topic, best_pro_attack, "opponent")
@@ -426,9 +542,10 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
             CorneringPoint(
                 point=best_pro_attack,
                 speaker="Agent A (Proposer)",
-                risk_level="TACTICAL ADVANTAGE",
+                risk_level="TACTICAL CORNER",
                 why_dangerous=f"Establishes a strong proactive benchmark that puts the opponent on the defensive.",
                 best_reply=reb_a,
+                escape_route=o_escape,
             )
         )
 
@@ -440,8 +557,13 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
                 risk_level="HIGH THREAT",
                 why_dangerous="Exposes logical weakness if premises lack empirical support.",
                 best_reply=f"Ground your response in specific, verifiable facts about '{topic}'.",
+                escape_route=o_escape,
             )
         ]
+
+    verdict_stmt = debrief.get("verdict_statement") or f"Proposer Strategic Debrief: Debate on '{topic}' complete across {total_turns} turns. Winner: {winner}."
+    pro_pts = debrief.get("key_proposer_points") or pro_claims[:3]
+    opp_pts = debrief.get("key_opponent_points") or opp_claims[:3]
 
     return DebateSummary(
         debate_id=session["debate_id"],
@@ -449,10 +571,13 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
         total_turns=total_turns,
         winner=winner,
         winner_reasoning=reasoning,
-        proposer_key_points=pro_claims[:3],
-        opponent_key_points=opp_claims[:3],
+        proposer_key_points=pro_pts,
+        opponent_key_points=opp_pts,
         total_contradictions=contradictions,
-        verdict_statement=f"Debate on '{topic}' complete across {total_turns} turns. Winner: {winner}.",
+        verdict_statement=verdict_stmt,
+        proposer_cornered_analysis=p_cornered,
+        opponent_cornered_analysis=o_cornered,
+        opponent_escape_route=o_escape,
         cornering_points=cornering_points,
         proposer_full_arguments=pro_claims,
         opponent_full_arguments=opp_claims,
