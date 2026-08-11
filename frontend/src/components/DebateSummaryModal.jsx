@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Trophy, X, Target, Award, BookOpen, Sparkles, CheckCircle, ShieldAlert } from 'lucide-react';
-import ThemeSwitcher from './ThemeSwitcher';
 
 export default function DebateSummaryModal({ summary, onClose }) {
   const [activeTab, setActiveTab] = useState('coaching'); // 'coaching' | 'verdict' | 'transcript'
@@ -53,7 +52,6 @@ export default function DebateSummaryModal({ summary, onClose }) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <ThemeSwitcher />
             <button onClick={onClose} className="btn-icon" id="close-modal-x">
               <X className="w-4 h-4" />
             </button>

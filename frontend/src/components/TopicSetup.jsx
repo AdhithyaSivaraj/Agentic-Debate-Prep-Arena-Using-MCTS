@@ -328,14 +328,14 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                 </div>
               </div>
 
-              {/* Docket Bottom Bar */}
+              {/* Resolution Bottom Bar */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
-                  Docket no. {docketNo.current}
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Max Turns Limit
                 </span>
                 <select
                   value={maxTurns}

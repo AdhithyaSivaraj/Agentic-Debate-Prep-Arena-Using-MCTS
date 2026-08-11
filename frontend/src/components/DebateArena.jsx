@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import ArgumentGraph from './ArgumentGraph';
 import TopicSetup from './TopicSetup';
 import DebateSummaryModal from './DebateSummaryModal';
-import ThemeSwitcher from './ThemeSwitcher';
 import StatusRing from './StatusRing';
 import { startDebate, nextTurn, getTranscript, getDebateSummary } from '../lib/api';
 
@@ -458,51 +457,61 @@ export default function DebateArena() {
           gap: 12,
         }}>
           <div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>
-              Docket no. {session?.debate_id?.slice(0, 4) || '0417'} — turn {turnNum} of {maxTurns}{isComplete ? ' (complete)' : ''}
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Turn {turnNum} of {maxTurns}{isComplete ? ' (complete)' : ''}
             </div>
             <div style={{ fontFamily: 'var(--serif)', fontWeight: 500, fontSize: 'clamp(18px, 2.5vw, 26px)', color: 'var(--ink-primary)', maxWidth: 640 }}>
               {session?.topic}
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              id="next-turn-btn"
-              className="btn-action"
-              onClick={handleNextTurn}
-              disabled={isNextTurnLoading || isComplete}
-            >
-              {isNextTurnLoading ? 'Reasoning…' : 'Next turn'}
-            </button>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Execution Group */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <button
+                id="next-turn-btn"
+                className="btn-action"
+                onClick={handleNextTurn}
+                disabled={isNextTurnLoading || isComplete}
+                style={{ padding: '9px 24px', fontSize: 13.5, fontWeight: 600 }}
+              >
+                {isNextTurnLoading ? 'Reasoning…' : 'Next Turn →'}
+              </button>
 
-            <button
-              id="autoplay-btn"
-              className={`btn-outline ${autoPlay ? 'active' : ''}`}
-              onClick={toggleAutoPlay}
-              disabled={isComplete}
-            >
-              {autoPlay ? 'Pause' : 'Auto-run'}
-            </button>
+              <button
+                id="autoplay-btn"
+                className={`btn-outline ${autoPlay ? 'active' : ''}`}
+                onClick={toggleAutoPlay}
+                disabled={isComplete}
+                style={{ padding: '9px 20px', fontSize: 13.5, minWidth: 110, justifyContent: 'center' }}
+              >
+                {autoPlay ? '⏸ Pause' : '▶ Auto-Run'}
+              </button>
+            </div>
 
-            <button
-              id="verdict-btn"
-              className="btn-outline"
-              onClick={() => handleFetchSummary()}
-            >
-              Verdict
-            </button>
+            <div style={{ width: 1, height: 24, backgroundColor: 'var(--border)' }} />
 
-            <button
-              id="reset-btn"
-              className="btn-icon"
-              onClick={handleReset}
-              title="New debate"
-            >
-              ↩
-            </button>
+            {/* Session Utilities Group */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <button
+                id="verdict-btn"
+                className="btn-outline"
+                onClick={() => handleFetchSummary()}
+                style={{ padding: '9px 20px', fontSize: 13.5 }}
+              >
+                🏆 Verdict
+              </button>
 
-            <ThemeSwitcher />
+              <button
+                id="reset-btn"
+                className="btn-outline"
+                onClick={handleReset}
+                title="Start a new debate"
+                style={{ padding: '9px 18px', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <span>↩</span> New Debate
+              </button>
+            </div>
           </div>
         </div>
 
