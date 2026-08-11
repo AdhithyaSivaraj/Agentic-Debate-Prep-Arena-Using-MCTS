@@ -330,18 +330,11 @@ def next_turn(req: NextTurnRequest) -> Turn:
     return turn_obj
 
 
-def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: str) -> str:
+def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: str, model_hint: str = None) -> str:
     """
-    Call Gemini to generate a concrete, specific counter-argument for a given attack claim.
-    Returns a real debate point the defender can fire back with — NOT a vague strategy description.
-    Falls back to a generic reply if the API call fails.
+    Generate a concrete, specific counter-argument for a given attack claim using ultra-fast Groq/NVIDIA endpoints.
+    Falls back to Gemini if needed.
     """
-    if not GEMINI_API_KEY:
-        return None
-
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-
     prompt = (
         f"Debate topic: '{topic}'\n"
         f"The {('opponent' if defending_role == 'proposer' else 'proposer')} just said:\n"
@@ -355,15 +348,59 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
         f"Output only the counter-argument text, nothing else."
     )
 
-    for model_name in GEMINI_MODEL_FALLBACKS:
+    if GROQ_API_KEY:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            text = response.text.strip()
+            from openai import OpenAI
+            client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
+            model_name = "llama-3.3-70b-versatile"
+            if model_hint and ("versatile" in model_hint or "instant" in model_hint):
+                model_name = model_hint
+            res = client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=6.0,
+            )
+            text = (res.choices[0].message.content or "").strip()
             if text:
-                return text
-        except Exception:
-            continue
+                return clean_claim_text(text)
+        except Exception as e:
+            logger.warning(f"Groq counter reply failed ({e}).")
+
+    if NVIDIA_API_KEY:
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
+            model_name = "nvidia/llama-3.3-nemotron-super-49b-v1"
+            if model_hint and ("/" in model_hint or "llama" in model_hint):
+                model_name = model_hint
+            res = client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=6.0,
+            )
+            text = (res.choices[0].message.content or "").strip()
+            if text:
+                return clean_claim_text(text)
+        except Exception as e:
+            logger.warning(f"NVIDIA counter reply failed ({e}).")
+
+    if GEMINI_API_KEY:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=GEMINI_API_KEY)
+            for m in GEMINI_MODEL_FALLBACKS:
+                try:
+                    model = genai.GenerativeModel(m)
+                    response = model.generate_content(prompt)
+                    text = response.text.strip()
+                    if text:
+                        return clean_claim_text(text)
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.warning(f"Gemini counter reply failed ({e}).")
 
     return None
 
@@ -448,7 +485,25 @@ def _generate_proposer_summary_debrief(
         except Exception as e:
             logger.warning(f"NVIDIA summary debrief failed ({e}).")
 
-    # 3. Fallback to Gemini
+    # 3. Fallback to Groq LPU if GROQ_API_KEY available
+    if GROQ_API_KEY:
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
+            res = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=10.0,
+            )
+            raw = res.choices[0].message.content or ""
+            parsed = _parse_summary_json(raw)
+            if parsed and "proposer_cornered_analysis" in parsed:
+                return parsed
+        except Exception as e:
+            logger.warning(f"Groq fallback summary debrief failed ({e}).")
+
+    # 4. Fallback to Gemini
     if GEMINI_API_KEY:
         try:
             import google.generativeai as genai

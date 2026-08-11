@@ -34,7 +34,7 @@ function formatModelName(modelStr) {
 }
 
 /* ── Claim Entry Component ──────────────────── */
-function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
+function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef = null }) {
   const contradicted = turn.contradiction_result?.found;
   const propForm     = turn.claim?.propositional_form;
 
@@ -60,16 +60,17 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
 
     let isMounted = true;
     let charIdx = 0;
-    const fullText = turn.claim.text;
+    const fullText = turn.claim.text || '';
+    const stepDelay = Math.max(12, Math.min(22, Math.floor(2200 / (fullText.length || 1))));
 
-    // 1. Start thinking for 500ms
+    // 1. Start thinking for 400ms
     setRingState('thinking');
     setShowMeta(false);
 
     const thinkingTimer = setTimeout(() => {
       if (!isMounted) return;
 
-      // 2. Flip to speaking & start typewriter text streaming
+      // 2. Flip to speaking & start fluid letter-by-letter text streaming
       setRingState('speaking');
 
       const typeInterval = setInterval(() => {
@@ -78,13 +79,14 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
           return;
         }
 
-        charIdx += 3;
-        if (charIdx % 6 === 0 || charIdx >= fullText.length) {
+        charIdx += 1;
+        setDisplayedText(fullText.substring(0, charIdx));
+
+        if (charIdx % 8 === 0 || charIdx >= fullText.length) {
           pulseBothRings();
         }
 
         if (charIdx >= fullText.length) {
-          setDisplayedText(fullText);
           clearInterval(typeInterval);
 
           // 3. Flip to done when typing completes
@@ -94,11 +96,9 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
               setShowMeta(true);
             }
           }, 200);
-        } else {
-          setDisplayedText(fullText.substring(0, charIdx));
         }
-      }, 35);
-    }, 500);
+      }, stepDelay);
+    }, 400);
 
     return () => {
       isMounted = false;
@@ -108,12 +108,14 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
 
   return (
     <div
+      ref={entryRef}
       className="reveal-item in"
       style={{
         display: 'grid',
         gridTemplateColumns: '1fr 40px 1fr',
         alignItems: 'start',
         marginBottom: 28,
+        scrollMarginTop: '160px',
       }}
     >
       {isAgentA ? (
@@ -168,7 +170,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
           </div>
 
           {/* Spine Ring (sm) replacing .turn-node */}
-          <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22 }}>
+          <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22, position: 'relative', zIndex: 2 }}>
             <StatusRing ref={ringRefSm} size="sm" state={ringState} agent="a" className="turn-node" />
           </div>
           <div style={{ gridColumn: 3 }} />
@@ -178,7 +180,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '' }) {
           {/* Agent B Card (Right) */}
           <div style={{ gridColumn: 1 }} />
           {/* Spine Ring (sm) replacing .turn-node */}
-          <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22 }}>
+          <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22, position: 'relative', zIndex: 2 }}>
             <StatusRing ref={ringRefSm} size="sm" state={ringState} agent="b" className="turn-node" />
           </div>
           <div style={{ gridColumn: 3, justifySelf: 'start' }}>
@@ -306,13 +308,22 @@ export default function DebateArena() {
   const [isLoading,         setIsLoading]         = useState(false);
   const [isNextTurnLoading, setIsNextTurnLoading] = useState(false);
   const [autoPlay,          setAutoPlay]          = useState(false);
+  const [autoScroll,        setAutoScroll]        = useState(true);
   const [activeSummary,     setActiveSummary]     = useState(null);
   const [showSetup,         setShowSetup]         = useState(true);
 
   // Synchronous ref to track autoPlay state in real-time without closure lag
   const autoPlayRef = useRef(false);
+  const lastTurnRef = useRef(null);
 
   useRevealOnScroll();
+
+  /* Auto-scroll effect */
+  useEffect(() => {
+    if (autoScroll && lastTurnRef.current && session?.turns?.length > 0) {
+      lastTurnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [session?.turns?.length, autoScroll]);
 
   /* Auto-play effect */
   useEffect(() => {
@@ -487,6 +498,16 @@ export default function DebateArena() {
               >
                 {autoPlay ? '⏸ Pause' : '▶ Auto-Run'}
               </button>
+
+              <button
+                id="autoscroll-btn"
+                className={`btn-outline ${autoScroll ? 'active' : ''}`}
+                onClick={() => setAutoScroll(prev => !prev)}
+                title="Auto-scroll to keep latest response centered"
+                style={{ padding: '9px 16px', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <span>📜</span> {autoScroll ? 'Auto-Scroll: ON' : 'Auto-Scroll: OFF'}
+              </button>
             </div>
 
             <div style={{ width: 1, height: 24, backgroundColor: 'var(--border)' }} />
@@ -525,38 +546,47 @@ export default function DebateArena() {
       {/* Spine & Timeline Content */}
       <div style={{ maxWidth: 1180, margin: '0 auto', padding: '72px 48px 88px', position: 'relative', zIndex: 10 }}>
 
-        {/* Center vertical spine line */}
-        <div style={{
-          position: 'absolute',
-          left: '50%',
-          top: 0,
-          bottom: 0,
-          width: 1,
-          backgroundColor: 'var(--border-strong)',
-          transform: 'translateX(-50%)',
-          zIndex: 0,
-        }} />
-
         {turns.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '120px 0', color: 'var(--ink-faint)', fontFamily: 'var(--mono)', fontSize: 12 }}>
             Click "Next turn" to begin the debate.
           </div>
         ) : (
-          turns.map((turn, idx) => {
-            const isAgentA  = turn.claim.speaker === 'agent_a';
-            const isLatest  = (idx === turns.length - 1);
-            const hasContra = turn.contradiction_result?.found;
-            const hasMcts   = !!turn.mcts_trace;
-            const cardModel = isAgentA ? propModelName : oppModelName;
+          <div style={{ position: 'relative' }}>
+            {/* Center vertical spine line — constrained strictly to turns container */}
+            <div style={{
+              position: 'absolute',
+              left: '50%',
+              top: 24,
+              bottom: 24,
+              width: 1,
+              backgroundColor: 'var(--border-strong)',
+              transform: 'translateX(-50%)',
+              zIndex: 0,
+              transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+            }} />
 
-            return (
-              <React.Fragment key={idx}>
-                <ClaimEntry turn={turn} isAgentA={isAgentA} isLatest={isLatest} modelName={cardModel} />
-                {hasContra && <ContraEntry turn={turn} />}
-                {hasMcts   && <MctsEntry mctsTrace={turn.mcts_trace} turnNumber={turn.turn_number} />}
-              </React.Fragment>
-            );
-          })
+            {turns.map((turn, idx) => {
+              const isAgentA  = turn.claim.speaker === 'agent_a';
+              const isLatest  = (idx === turns.length - 1);
+              const hasContra = turn.contradiction_result?.found;
+              const hasMcts   = !!turn.mcts_trace;
+              const cardModel = isAgentA ? propModelName : oppModelName;
+
+              return (
+                <React.Fragment key={idx}>
+                  <ClaimEntry
+                    turn={turn}
+                    isAgentA={isAgentA}
+                    isLatest={isLatest}
+                    modelName={cardModel}
+                    entryRef={isLatest ? lastTurnRef : null}
+                  />
+                  {hasContra && <ContraEntry turn={turn} />}
+                  {hasMcts   && <MctsEntry mctsTrace={turn.mcts_trace} turnNumber={turn.turn_number} />}
+                </React.Fragment>
+              );
+            })}
+          </div>
         )}
       </div>
 

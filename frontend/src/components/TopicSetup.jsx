@@ -56,8 +56,8 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   const [topic, setTopic] = useState('');
   const [userInteracted, setUserInteracted] = useState(false);
   const [maxTurns, setMaxTurns] = useState(20);
-  const [proposerModel, setProposerModel] = useState('nvidia/llama-3.3-nemotron-super-49b-v1');
-  const [opponentModel, setOpponentModel] = useState('nvidia/llama-3.3-nemotron-super-49b-v1');
+  const [proposerModel, setProposerModel] = useState('llama-3.3-70b-versatile');
+  const [opponentModel, setOpponentModel] = useState('llama-3.3-70b-versatile');
   const [deriveLines, setDeriveLines] = useState([]);
   const [titleVisible, setTitleVisible] = useState(false);
 
