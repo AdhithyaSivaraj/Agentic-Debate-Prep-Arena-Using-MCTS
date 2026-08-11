@@ -34,7 +34,7 @@ function formatModelName(modelStr) {
 }
 
 /* ── Claim Entry Component ──────────────────── */
-function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef = null }) {
+function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef = null, autoScroll = true }) {
   const contradicted = turn.contradiction_result?.found;
   const propForm     = turn.claim?.propositional_form;
 
@@ -49,6 +49,18 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     ringRefLg.current?.pulse();
     ringRefSm.current?.pulse();
   };
+
+  const centerInView = () => {
+    if (isLatest && autoScroll && entryRef?.current) {
+      entryRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  useEffect(() => {
+    if (isLatest && autoScroll) {
+      centerInView();
+    }
+  }, [isLatest, autoScroll]);
 
   useEffect(() => {
     if (!isLatest) {
@@ -66,12 +78,14 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     // 1. Start thinking for 400ms
     setRingState('thinking');
     setShowMeta(false);
+    centerInView();
 
     const thinkingTimer = setTimeout(() => {
       if (!isMounted) return;
 
       // 2. Flip to speaking & start fluid letter-by-letter text streaming
       setRingState('speaking');
+      centerInView();
 
       const typeInterval = setInterval(() => {
         if (!isMounted) {
@@ -86,6 +100,10 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
           pulseBothRings();
         }
 
+        if (charIdx % 15 === 0 || charIdx >= fullText.length) {
+          centerInView();
+        }
+
         if (charIdx >= fullText.length) {
           clearInterval(typeInterval);
 
@@ -94,6 +112,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
             if (isMounted) {
               setRingState('done');
               setShowMeta(true);
+              centerInView();
             }
           }, 200);
         }
@@ -580,6 +599,7 @@ export default function DebateArena() {
                     isLatest={isLatest}
                     modelName={cardModel}
                     entryRef={isLatest ? lastTurnRef : null}
+                    autoScroll={autoScroll}
                   />
                   {hasContra && <ContraEntry turn={turn} />}
                   {hasMcts   && <MctsEntry mctsTrace={turn.mcts_trace} turnNumber={turn.turn_number} />}
