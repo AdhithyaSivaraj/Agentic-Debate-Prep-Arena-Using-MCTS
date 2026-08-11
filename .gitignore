@@ -30,8 +30,10 @@ build/
 *.swp
 *.swo
 
-# Prompt & Specification Files (Outside Frontend / Backend)
-/*_prompt.md
+# Prompt & Specification Files (Ignore all .md files except README.md)
+*.md
+!README.md
+!**/README.md
 /argument_graph_redesign.html
 /issues.md
 /PROJECT_STATE.md
