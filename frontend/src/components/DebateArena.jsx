@@ -50,17 +50,20 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     ringRefSm.current?.pulse();
   };
 
-  const centerInView = () => {
-    if (isLatest && autoScroll && entryRef?.current) {
-      entryRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  };
-
+  // ResizeObserver to lock expanding card in vertical center of viewport
   useEffect(() => {
-    if (isLatest && autoScroll) {
-      centerInView();
-    }
-  }, [isLatest, autoScroll]);
+    if (!isLatest || !autoScroll || !entryRef?.current) return;
+
+    const element = entryRef.current;
+    const observer = new ResizeObserver(() => {
+      element.scrollIntoView({ behavior: 'auto', block: 'center' });
+    });
+
+    observer.observe(element);
+    element.scrollIntoView({ behavior: 'auto', block: 'center' });
+
+    return () => observer.disconnect();
+  }, [isLatest, autoScroll, entryRef]);
 
   useEffect(() => {
     if (!isLatest) {
@@ -78,14 +81,12 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     // 1. Start thinking for 400ms
     setRingState('thinking');
     setShowMeta(false);
-    centerInView();
 
     const thinkingTimer = setTimeout(() => {
       if (!isMounted) return;
 
       // 2. Flip to speaking & start fluid letter-by-letter text streaming
       setRingState('speaking');
-      centerInView();
 
       const typeInterval = setInterval(() => {
         if (!isMounted) {
@@ -100,10 +101,6 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
           pulseBothRings();
         }
 
-        if (charIdx % 15 === 0 || charIdx >= fullText.length) {
-          centerInView();
-        }
-
         if (charIdx >= fullText.length) {
           clearInterval(typeInterval);
 
@@ -112,7 +109,6 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
             if (isMounted) {
               setRingState('done');
               setShowMeta(true);
-              centerInView();
             }
           }, 200);
         }
