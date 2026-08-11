@@ -13,11 +13,11 @@ export default function ContradictionAlert({ contradictionResult, onClose }) {
 
       <div className="relative w-full max-w-xl animate-modal glow-contradiction bg-arena-surface border border-alert-red/40 rounded-2xl shadow-2xl">
 
-        {/* Top red stripe */}
+        
         <div className="h-1 w-full bg-gradient-to-r from-alert-red via-alert-orange to-alert-red/50 rounded-t-2xl" />
 
         <div className="p-6">
-          {/* Header */}
+          
           <div className="flex items-start justify-between mb-5">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-alert-red/15 text-alert-red border border-alert-red/35">
@@ -38,7 +38,7 @@ export default function ContradictionAlert({ contradictionResult, onClose }) {
             </button>
           </div>
 
-          {/* Conflicting clause pair */}
+          
           {conflictingPairs.length > 0 && (
             <div className="mb-5">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-alert-orange mb-2">
@@ -69,7 +69,7 @@ export default function ContradictionAlert({ contradictionResult, onClose }) {
             </div>
           )}
 
-          {/* Resolution derivation trace */}
+          
           {proofSteps.length > 0 && (
             <div className="mb-5">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-arena-muted mb-2 flex items-center gap-1.5">
@@ -93,7 +93,7 @@ export default function ContradictionAlert({ contradictionResult, onClose }) {
             </div>
           )}
 
-          {/* Plain-English explanation */}
+          
           <div className="p-3.5 rounded-xl bg-alert-red/8 border border-alert-red/20 text-[11px] text-arena-text leading-relaxed mb-5">
             <span className="font-semibold text-alert-red">Explainability Guarantee: </span>
             This contradiction was not guessed by an LLM. The propositional resolution algorithm

@@ -35,10 +35,10 @@ export default function AgentPanel({
           : 'bg-arena-surface border-agentB-border/25'
       }`}
     >
-      {/* Panel Header */}
+      
       <div className="flex items-center justify-between border-b border-arena-border/70 px-4 pt-4 pb-3.5 mb-1">
         <div className="flex items-center gap-3">
-          {/* Icon badge */}
+          
           <div
             className={`p-2 rounded-xl border transition-all ${
               isAgentA
@@ -60,9 +60,9 @@ export default function AgentPanel({
           </div>
         </div>
 
-        {/* Right: KB status + speaking indicator */}
+        
         <div className="flex flex-col items-end gap-1.5">
-          {/* Speaking badge */}
+          
           {isActiveSpeaker && (
             <span
               className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border animate-subtle-pulse ${
@@ -76,14 +76,14 @@ export default function AgentPanel({
             </span>
           )}
 
-          {/* KB counter */}
+          
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-arena-bg border border-arena-border/60 text-[11px]">
             <Database className="w-3 h-3 text-arena-muted" />
             <span className="font-mono text-white font-medium">{kbCount}</span>
             <span className="text-arena-muted">clauses</span>
           </div>
 
-          {/* Consistency status */}
+          
           <div className="flex items-center gap-1 text-[10px]">
             {hasContradiction ? (
               <span className="text-alert-red font-semibold flex items-center gap-1">
@@ -100,7 +100,7 @@ export default function AgentPanel({
         </div>
       </div>
 
-      {/* Claims Stream */}
+      
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2.5 min-h-[360px] max-h-[520px]"

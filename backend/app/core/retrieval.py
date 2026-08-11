@@ -48,12 +48,6 @@ from typing import Callable
 import numpy as np
 
 
-# ---------------------------------------------------------------------------
-# Types
-# ---------------------------------------------------------------------------
-
-# An embedding function: takes a list of strings, returns a 2D numpy array
-# of shape (n_strings, embedding_dim).
 EmbedFn = Callable[[list[str]], np.ndarray]
 
 
@@ -61,13 +55,9 @@ EmbedFn = Callable[[list[str]], np.ndarray]
 class RetrievedFact:
     """A fact retrieved from the index, with its similarity score."""
     text: str
-    score: float    # cosine similarity in [−1, 1], higher = more relevant
-    index: int      # position in the original fact list (for debugging)
+    score: float                                                          
+    index: int                                                          
 
-
-# ---------------------------------------------------------------------------
-# Global fact index (per-session cache)
-# ---------------------------------------------------------------------------
 
 class FactIndex:
     """
@@ -86,19 +76,14 @@ class FactIndex:
                 f"facts ({len(facts)}) and vectors ({vectors.shape[0]}) must have the same length"
             )
         self.facts: list[str] = facts
-        self.vectors: np.ndarray = vectors   # shape: (n_facts, embedding_dim)
+        self.vectors: np.ndarray = vectors                                    
 
     def __len__(self) -> int:
         return len(self.facts)
 
 
-# Module-level singleton — replaced each time build_index() is called
 _FACT_INDEX: FactIndex | None = None
 
-
-# ---------------------------------------------------------------------------
-# Core math: cosine similarity
-# ---------------------------------------------------------------------------
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """
@@ -143,17 +128,13 @@ def cosine_similarity_matrix(query_vec: np.ndarray, matrix: np.ndarray) -> np.nd
     if query_norm == 0.0:
         return np.zeros(matrix.shape[0])
 
-    row_norms = np.linalg.norm(matrix, axis=1)          # shape: (n_facts,)
-    # Avoid division by zero for zero-vector rows
+    row_norms = np.linalg.norm(matrix, axis=1)                             
+                                                 
     row_norms = np.where(row_norms == 0.0, 1e-10, row_norms)
 
-    dot_products = matrix @ query_vec                    # shape: (n_facts,)
+    dot_products = matrix @ query_vec                                       
     return (dot_products / (row_norms * query_norm)).astype(float)
 
-
-# ---------------------------------------------------------------------------
-# Index construction
-# ---------------------------------------------------------------------------
 
 def build_index(facts: list[str], embed_fn: EmbedFn) -> FactIndex:
     """
@@ -180,7 +161,7 @@ def build_index(facts: list[str], embed_fn: EmbedFn) -> FactIndex:
     if not facts:
         raise ValueError("build_index requires at least one fact")
 
-    vectors = embed_fn(facts)           # shape: (len(facts), embedding_dim)
+    vectors = embed_fn(facts)                                               
     vectors = np.array(vectors, dtype=float)
 
     _FACT_INDEX = FactIndex(facts=facts, vectors=vectors)
@@ -207,10 +188,6 @@ def clear_index() -> None:
     global _FACT_INDEX
     _FACT_INDEX = None
 
-
-# ---------------------------------------------------------------------------
-# Retrieval
-# ---------------------------------------------------------------------------
 
 def retrieve_relevant_fact(
     query: str,
@@ -246,13 +223,13 @@ def retrieve_relevant_fact(
 
     fact_index = index if index is not None else get_index()
 
-    # Embed the query — embed_fn takes a list, returns a 2D array; take row 0
-    query_vec = np.array(embed_fn([query]), dtype=float)[0]  # shape: (embedding_dim,)
+                                                                             
+    query_vec = np.array(embed_fn([query]), dtype=float)[0]                           
 
-    # Compute cosine similarity against all cached fact vectors
-    scores = cosine_similarity_matrix(query_vec, fact_index.vectors)  # shape: (n_facts,)
+                                                               
+    scores = cosine_similarity_matrix(query_vec, fact_index.vectors)                     
 
-    # Rank by descending score and take top-k
+                                             
     k = min(top_k, len(fact_index))
     top_indices = np.argsort(scores)[::-1][:k]
 
@@ -265,10 +242,6 @@ def retrieve_relevant_fact(
         for i in top_indices
     ]
 
-
-# ---------------------------------------------------------------------------
-# Production embedding function (Nemotron 3 Embed 1B via OpenRouter)
-# ---------------------------------------------------------------------------
 
 def make_nemotron_embed_fn(api_key: str) -> EmbedFn:
     """
@@ -292,7 +265,7 @@ def make_nemotron_embed_fn(api_key: str) -> EmbedFn:
     import httpx
 
     OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings"
-    # Verified free-tier embedding model on OpenRouter:
+                                                       
     NEMOTRON_EMBED_MODEL = "nvidia/nemo-embed-qa-e5-v5"
 
     def embed_fn(texts: list[str]) -> np.ndarray:
@@ -315,7 +288,7 @@ def make_nemotron_embed_fn(api_key: str) -> EmbedFn:
         response.raise_for_status()
         data = response.json()
 
-        # OpenAI-compatible response: {"data": [{"embedding": [...], "index": 0}, ...]}
+                                                                                       
         embeddings = [item["embedding"] for item in sorted(data["data"], key=lambda x: x["index"])]
         return np.array(embeddings, dtype=float)
 

@@ -65,10 +65,6 @@ from core.retrieval import retrieve_relevant_fact, EmbedFn, FactIndex
 from core.mcts import select_best_rebuttal, DebateState, RejectedCandidate
 
 
-# ---------------------------------------------------------------------------
-# Executor context — runtime dependencies injected per agent
-# ---------------------------------------------------------------------------
-
 @dataclass
 class ExecutorContext:
     """
@@ -94,10 +90,6 @@ class ExecutorContext:
     agent_id: str = ""
     turn_history: list[str] = field(default_factory=list)
 
-
-# ---------------------------------------------------------------------------
-# Tool result — standardised return type
-# ---------------------------------------------------------------------------
 
 @dataclass
 class ToolResult:
@@ -129,10 +121,6 @@ class ToolResult:
         return json.dumps({"error": self.error})
 
 
-# ---------------------------------------------------------------------------
-# Propositional form parser
-# ---------------------------------------------------------------------------
-
 def parse_propositional_form(prop_form: str) -> Clause | None:
     """
     Parse a propositional form string into a Clause (frozenset of literals).
@@ -149,7 +137,7 @@ def parse_propositional_form(prop_form: str) -> Clause | None:
     """
     prop_form = prop_form.strip()
 
-    # Implication: "A → B" or "A -> B"
+                                      
     for sep in ["→", "->"]:
         if sep in prop_form:
             parts = prop_form.split(sep, 1)
@@ -158,7 +146,7 @@ def parse_propositional_form(prop_form: str) -> Clause | None:
             if antecedent and consequent:
                 return implication_to_clause(antecedent, consequent)
 
-    # Negation: "¬A" or "NOT A"
+                               
     if prop_form.startswith("¬"):
         atom_name = prop_form[1:].strip()
         if atom_name:
@@ -169,16 +157,12 @@ def parse_propositional_form(prop_form: str) -> Clause | None:
         if atom_name:
             return neg_atom(atom_name)
 
-    # Positive literal: "A"
+                           
     if prop_form and " " not in prop_form:
         return atom(prop_form)
 
-    return None   # could not parse
+    return None                    
 
-
-# ---------------------------------------------------------------------------
-# Individual tool handlers
-# ---------------------------------------------------------------------------
 
 def _handle_retrieve_relevant_fact(args: dict, ctx: ExecutorContext) -> ToolResult:
     """
@@ -226,7 +210,7 @@ def _handle_check_contradiction(args: dict, ctx: ExecutorContext) -> ToolResult:
     Route: check_contradiction(target, agent_id)
     → KnowledgeBase.ask_contradiction() / ask_contradiction_of_opponent() / ask_combined_contradiction()
     """
-    target = args.get("target", "self")   # "self" | "opponent" | "combined"
+    target = args.get("target", "self")                                     
 
     try:
         if target == "self":
@@ -281,7 +265,7 @@ def _handle_select_best_rebuttal(args: dict, ctx: ExecutorContext) -> ToolResult
         )
 
     if len(candidates) == 1:
-        # Trivial case — still run through MCTS to maintain consistent output format
+                                                                                    
         pass
 
     try:
@@ -343,12 +327,12 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
             error="context, direction, and propositional_form are all required",
         )
 
-    # Parse the propositional form and TELL it into the KB
+                                                          
     clause = parse_propositional_form(prop_form)
     tell_success = True
     tell_warning = None
 
-    # Record spoken claim into debate_state tracking
+                                                    
     if ctx.agent_id == "agent_a":
         ctx.debate_state.own_claims.append(direction)
     else:
@@ -366,7 +350,7 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
 
     return ToolResult(
         tool_name="generate_claim",
-        success=True,   # Always success — LLM can still generate even if parse fails
+        success=True,                                                                
         output={
             "context": context,
             "direction": direction,
@@ -382,10 +366,6 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
         },
     )
 
-
-# ---------------------------------------------------------------------------
-# Main dispatch function
-# ---------------------------------------------------------------------------
 
 _TOOL_HANDLERS: dict[str, Any] = {
     "retrieve_relevant_fact": _handle_retrieve_relevant_fact,

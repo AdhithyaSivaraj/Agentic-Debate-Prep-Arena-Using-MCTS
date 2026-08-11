@@ -12,7 +12,7 @@ import sys
 import os
 import logging
 
-# Add the 'app' directory to Python's sys.path so submodules import cleanly
+                                                                           
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from fastapi import FastAPI
@@ -30,7 +30,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS setup for React frontend
+                               
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS + ["http://localhost:5173", "http://127.0.0.1:5173", "*"],
@@ -39,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register routes (supported both at root and /api prefix)
+                                                          
 app.include_router(debate_router)
 app.include_router(debate_router, prefix="/api")
 

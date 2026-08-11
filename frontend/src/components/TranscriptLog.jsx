@@ -12,7 +12,7 @@ export default function TranscriptLog({ turns = [], onInspectContradiction, onIn
 
   return (
     <div className="flex flex-col h-full bg-arena-surface rounded-2xl border border-arena-border/70 overflow-hidden">
-      {/* Header */}
+      
       <div className="flex items-center justify-between border-b border-arena-border/70 px-4 py-3.5 shrink-0">
         <div className="flex items-center gap-2">
           <ScrollText className="w-4 h-4 text-arena-muted" />
@@ -23,7 +23,7 @@ export default function TranscriptLog({ turns = [], onInspectContradiction, onIn
         </span>
       </div>
 
-      {/* Turn list */}
+      
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 min-h-[360px] max-h-[540px]"
@@ -47,13 +47,13 @@ export default function TranscriptLog({ turns = [], onInspectContradiction, onIn
                     : 'bg-arena-bg border-agentB-border/20 hover:border-agentB-primary/40'
                 } ${hasContradiction ? 'border-alert-red/40 bg-red-950/10' : ''}`}
               >
-                {/* Left accent stripe */}
+                
                 <div className={`absolute left-0 top-0 bottom-0 w-[2.5px] rounded-l-xl ${
                   hasContradiction ? 'bg-alert-red' : isAgentA ? 'bg-agentA-primary' : 'bg-agentB-primary'
                 }`} />
 
                 <div className="pl-1">
-                  {/* Turn header */}
+                  
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-1.5">
                       <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide flex items-center gap-0.5 ${
@@ -67,7 +67,7 @@ export default function TranscriptLog({ turns = [], onInspectContradiction, onIn
                       <span className="font-mono text-[9px] text-arena-muted">#{t.turn_number}</span>
                     </div>
 
-                    {/* Actions row */}
+                    
                     <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       {hasContradiction && (
                         <button
@@ -90,12 +90,12 @@ export default function TranscriptLog({ turns = [], onInspectContradiction, onIn
                     </div>
                   </div>
 
-                  {/* Claim text */}
+                  
                   <p className="text-arena-text text-[11px] leading-relaxed mb-1.5 line-clamp-3">
                     {t.claim.text}
                   </p>
 
-                  {/* Clause */}
+                  
                   <div className="font-mono text-[9px] text-arena-muted/70">
                     ∴ {t.claim.propositional_form}
                   </div>

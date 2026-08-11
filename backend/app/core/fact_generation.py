@@ -34,10 +34,6 @@ import re
 from core.resolution import Clause, clause_to_str
 
 
-# ---------------------------------------------------------------------------
-# Structured fact dataclass
-# ---------------------------------------------------------------------------
-
 class FactRecord:
     """
     A single fact from the generated fact base.
@@ -66,10 +62,6 @@ class FactRecord:
         clause_str = clause_to_str(self.clause) if self.clause else "UNPARSED"
         return f"FactRecord({clause_str!r}, rel={self.relationship!r})"
 
-
-# ---------------------------------------------------------------------------
-# Prompt builder
-# ---------------------------------------------------------------------------
 
 FACT_GENERATION_SYSTEM_PROMPT = """You are a logical fact extractor for a debate system.
 Your output is consumed by a propositional resolution engine — accuracy of logical form is critical.
@@ -107,10 +99,6 @@ Rules:
 Return ONLY the JSON array — no explanation, no markdown fences, no extra text."""
 
 
-# ---------------------------------------------------------------------------
-# Response parser
-# ---------------------------------------------------------------------------
-
 def parse_fact_generation_response(raw_response: str) -> list[FactRecord]:
     """
     Parse the LLM's JSON response into a list of FactRecord objects.
@@ -124,15 +112,15 @@ def parse_fact_generation_response(raw_response: str) -> list[FactRecord]:
     form could not be parsed still have clause=None and are included in the list
     (callers decide whether to skip or keep them).
     """
-    # Import here to avoid circular imports (tool_executor imports from core)
+                                                                             
     from tools.tool_executor import parse_propositional_form
 
-    # Strip markdown fences if present
+                                      
     cleaned = raw_response.strip()
     if cleaned.startswith("```"):
-        # Remove opening fence (```json or ```)
+                                               
         cleaned = re.sub(r"^```[a-z]*\n?", "", cleaned, flags=re.IGNORECASE)
-        # Remove closing fence
+                              
         cleaned = re.sub(r"\n?```$", "", cleaned)
 
     try:
@@ -158,7 +146,7 @@ def parse_fact_generation_response(raw_response: str) -> list[FactRecord]:
         relationship = item.get("relationship", "is_independent").strip()
 
         if not text or not propositional:
-            continue   # skip malformed entries
+            continue                           
 
         clause = parse_propositional_form(propositional)
 
@@ -171,10 +159,6 @@ def parse_fact_generation_response(raw_response: str) -> list[FactRecord]:
 
     return records
 
-
-# ---------------------------------------------------------------------------
-# Main generation function
-# ---------------------------------------------------------------------------
 
 def generate_fact_base(
     topic: str,
@@ -233,10 +217,6 @@ def generate_fact_base(
     records = parse_fact_generation_response(raw_text)
     return records
 
-
-# ---------------------------------------------------------------------------
-# Utility: extract plain-text facts and valid clauses for downstream consumers
-# ---------------------------------------------------------------------------
 
 def extract_fact_texts(records: list[FactRecord]) -> list[str]:
     """Return just the natural-language strings (for build_index in retrieval.py)."""

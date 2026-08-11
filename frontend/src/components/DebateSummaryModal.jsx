@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Trophy, X, Target, Award, BookOpen, Sparkles, CheckCircle, ShieldAlert } from 'lucide-react';
 
 export default function DebateSummaryModal({ summary, onClose }) {
-  const [activeTab, setActiveTab] = useState('coaching'); // 'coaching' | 'verdict' | 'transcript'
+  const [activeTab, setActiveTab] = useState('coaching'); 
   const [coachingFilter, setCoachingFilter] = useState('all');
   const [transcriptFilter, setTranscriptFilter] = useState('all');
 
@@ -36,7 +36,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
     <div className="modal-overlay">
       <div className="modal-dialog">
         
-        {/* Modal Header */}
+        
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', padding: '16px 24px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ padding: 8, borderRadius: 5, backgroundColor: 'var(--agent-b-dim)', border: '1px solid var(--agent-b-border)' }}>
@@ -58,7 +58,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 24px', borderBottom: '1px solid var(--border)', backgroundColor: 'var(--bg-subtle)', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
@@ -89,7 +89,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
             </button>
           </div>
 
-          {/* Sub Filters */}
+          
           {activeTab === 'coaching' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--ink-faint)' }}>Filter:</span>
@@ -109,14 +109,14 @@ export default function DebateSummaryModal({ summary, onClose }) {
           )}
         </div>
 
-        {/* Tab Body */}
+        
         <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* TAB 1: COACHING */}
+          
           {activeTab === 'coaching' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               
-              {/* Proposer Agent Strategic Debrief Header Card */}
+              
               <div className="arena-card card-a" style={{ display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: 'var(--agent-a-dim)', borderColor: 'var(--agent-a-border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--agent-a-border)', paddingBottom: 8 }}>
                   <Sparkles className="w-4 h-4 text-agentA-primary" style={{ color: 'var(--agent-a)' }} />
@@ -197,7 +197,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
             </div>
           )}
 
-          {/* TAB 2: VERDICT */}
+          
           {activeTab === 'verdict' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div className="arena-card" style={{ display: 'flex', alignItems: 'center', gap: 18, borderColor: isAgentA ? 'var(--agent-a-border)' : isDraw ? 'var(--border-strong)' : 'var(--agent-b-border)', backgroundColor: isAgentA ? 'var(--agent-a-dim)' : isDraw ? 'var(--bg-surface)' : 'var(--agent-b-dim)' }}>
@@ -250,7 +250,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
             </div>
           )}
 
-          {/* TAB 3: TRANSCRIPT */}
+          
           {activeTab === 'transcript' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
@@ -275,7 +275,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
 
         </div>
 
-        {/* Modal Footer */}
+        
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border)', padding: '14px 24px', backgroundColor: 'var(--bg-subtle)', flexShrink: 0 }}>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--ink-faint)' }}>
             Logic Propositional Engine · MCTS Selection

@@ -68,16 +68,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+UCB1_EXPLORATION_CONSTANT: float = math.sqrt(2)                               
 
-UCB1_EXPLORATION_CONSTANT: float = math.sqrt(2)   # standard theoretical value
-
-
-# ---------------------------------------------------------------------------
-# Debate state — lightweight representation for MCTS scoring
-# ---------------------------------------------------------------------------
 
 @dataclass
 class DebateState:
@@ -139,10 +131,6 @@ class DebateState:
         return next_state
 
 
-# ---------------------------------------------------------------------------
-# MCTS Node
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Node:
     """
@@ -162,12 +150,9 @@ class Node:
     visit_count: int = 0
     value: float = 0.0
     untried_moves: list[str] = field(default_factory=list)
-    move: str = ""   # the candidate/move that produced this node from its parent
+    move: str = ""                                                               
 
-    # ------------------------------------------------------------------
-    # UCB1 — Upper Confidence Bound for Trees
-    # ------------------------------------------------------------------
-
+                                                                        
     def ucb1(self, exploration_constant: float = UCB1_EXPLORATION_CONSTANT) -> float:
         """
         Compute the UCB1 score for this node:
@@ -226,10 +211,6 @@ class Node:
         return max(self.children, key=lambda c: c.visit_count)
 
 
-# ---------------------------------------------------------------------------
-# Rejected candidate — for UI display
-# ---------------------------------------------------------------------------
-
 @dataclass
 class RejectedCandidate:
     """
@@ -238,14 +219,10 @@ class RejectedCandidate:
     MCTSTracePanel ("show your work" visualisation).
     """
     text: str
-    score: float           # average value = value / visit_count
+    score: float                                                
     visit_count: int
-    raw_value: float       # total accumulated value (for debugging)
+    raw_value: float                                                
 
-
-# ---------------------------------------------------------------------------
-# MCTS — four phases
-# ---------------------------------------------------------------------------
 
 class MCTS:
     """
@@ -260,10 +237,7 @@ class MCTS:
         self.n_simulations = n_simulations
         self.exploration_constant = exploration_constant
 
-    # ------------------------------------------------------------------
-    # Phase 1: Selection
-    # ------------------------------------------------------------------
-
+                                                                        
     def select(self, node: Node) -> Node:
         """
         Traverse the tree from `node` downward using UCB1 until we reach
@@ -278,10 +252,7 @@ class MCTS:
             current = current.best_child(self.exploration_constant)
         return current
 
-    # ------------------------------------------------------------------
-    # Phase 2: Expansion
-    # ------------------------------------------------------------------
-
+                                                                        
     def expand(self, node: Node) -> Node:
         """
         Pick one untried move from `node.untried_moves`, remove it from the list,
@@ -295,21 +266,18 @@ class MCTS:
         if not node.untried_moves:
             raise ValueError("expand() called on a fully-expanded node")
 
-        move = node.untried_moves.pop(0)   # take the first untried candidate
+        move = node.untried_moves.pop(0)                                     
         child_state = node.state.apply_candidate(move)
         child = Node(
             state=child_state,
             parent=node,
-            untried_moves=[],   # leaf nodes in the 1-level tree have no further moves
+            untried_moves=[],                                                         
             move=move,
         )
         node.children.append(child)
         return child
 
-    # ------------------------------------------------------------------
-    # Phase 3: Simulation (heuristic rollout)
-    # ------------------------------------------------------------------
-
+                                                                        
     def simulate(self, node: Node) -> float:
         """
         Evaluate the state at `node` using the heuristic scoring function.
@@ -328,10 +296,7 @@ class MCTS:
         """
         return node.state.heuristic_score()
 
-    # ------------------------------------------------------------------
-    # Phase 4: Backpropagation
-    # ------------------------------------------------------------------
-
+                                                                        
     def backpropagate(self, node: Node, result: float) -> None:
         """
         Walk from `node` back up to the root, adding `result` to every
@@ -346,33 +311,27 @@ class MCTS:
             current.value += result
             current = current.parent
 
-    # ------------------------------------------------------------------
-    # Main loop — runs all four phases N times
-    # ------------------------------------------------------------------
-
+                                                                        
     def run(self, root: Node) -> None:
         """
         Execute the MCTS main loop for self.n_simulations iterations.
         Each iteration runs: Select → Expand (if possible) → Simulate → Backpropagate.
         """
         for _ in range(self.n_simulations):
-            # Phase 1: Selection — descend tree using UCB1
+                                                          
             node = self.select(root)
 
-            # Phase 2: Expansion — if the selected node has untried moves, expand one
+                                                                                     
             if node.untried_moves:
                 node = self.expand(node)
 
-            # Phase 3: Simulation — evaluate the node's state heuristically
+                                                                           
             result = self.simulate(node)
 
-            # Phase 4: Backpropagation — propagate result to all ancestors
+                                                                          
             self.backpropagate(node, result)
 
-    # ------------------------------------------------------------------
-    # Public API: select_best_rebuttal
-    # ------------------------------------------------------------------
-
+                                                                        
     def select_best_rebuttal(
         self,
         candidates: list[str],
@@ -403,7 +362,7 @@ class MCTS:
         if not candidates:
             raise ValueError("select_best_rebuttal requires at least one candidate")
 
-        # Deduplicate candidates while preserving order
+                                                       
         seen: set[str] = set()
         unique_candidates: list[str] = []
         for c in candidates:
@@ -411,17 +370,16 @@ class MCTS:
                 seen.add(c)
                 unique_candidates.append(c)
 
-        # Build root — all candidates are untried children of the root
+                                                                      
         root = Node(
             state=deepcopy(current_state),
             untried_moves=list(unique_candidates),
         )
 
-        # Run MCTS
+                  
         self.run(root)
 
-        # If no simulations expanded any children (e.g., n_simulations=0 edge case),
-        # fall back to returning the first candidate
+                                                                                    
         if not root.children:
             return (
                 unique_candidates[0],
@@ -431,11 +389,11 @@ class MCTS:
                 ],
             )
 
-        # Pick winner by visit count (more robust than raw value)
+                                                                 
         winner = root.best_child_by_visits()
         chosen_text = winner.move
 
-        # Build rejected list — every child that is NOT the winner
+                                                                  
         rejected: list[RejectedCandidate] = []
         for child in root.children:
             if child.move == chosen_text:
@@ -450,8 +408,7 @@ class MCTS:
                 )
             )
 
-        # Also include any candidates that were never expanded (untried after all simulations)
-        # This can happen when n_simulations < len(candidates)
+                                                                                              
         tried_moves = {child.move for child in root.children}
         for cand in unique_candidates:
             if cand not in tried_moves and cand != chosen_text:
@@ -461,10 +418,6 @@ class MCTS:
 
         return chosen_text, rejected
 
-
-# ---------------------------------------------------------------------------
-# Module-level convenience function (matches the tool_executor dispatch target)
-# ---------------------------------------------------------------------------
 
 def select_best_rebuttal(
     candidates: list[str],

@@ -52,7 +52,7 @@ class GeminiAgent(BaseAgent):
     Role: Proposer (by default).
     """
 
-    CURRENT_MODEL_INDEX: int = 0  # Ring buffer index for GEMINI_MODEL_FALLBACKS
+    CURRENT_MODEL_INDEX: int = 0                                                
 
     def __init__(self, agent_id: str = "agent_a", role: str = "proposer", api_key: str | None = None):
         super().__init__(agent_id=agent_id, role=role)
@@ -86,7 +86,7 @@ class GeminiAgent(BaseAgent):
         """
         ctx.agent_id = self.agent_id
 
-        # Attempt Gemini API loop starting from the LAST SUCCESSFUL model index, cycling in ring order
+                                                                                                      
         if self.api_key:
             import time
             num_models = len(GEMINI_MODEL_FALLBACKS)
@@ -96,12 +96,12 @@ class GeminiAgent(BaseAgent):
                 model_idx = (start_idx + offset) % num_models
                 model_name = GEMINI_MODEL_FALLBACKS[model_idx]
 
-                for attempt in range(2):  # 2 retries per model (per-minute backoff)
+                for attempt in range(2):                                            
                     try:
                         res = self._run_gemini_api_loop(topic, opponent_last_claim, turn_number, ctx, model_name=model_name)
                         res["mode"] = "live"
                         res["model_used"] = model_name
-                        # Update global model index to remember the last working model for subsequent turns
+                                                                                                           
                         GeminiAgent.CURRENT_MODEL_INDEX = model_idx
                         if model_name != GEMINI_MODEL:
                             logger.info(f"Used fallback model '{model_name}' (model index {model_idx}).")
@@ -123,7 +123,7 @@ class GeminiAgent(BaseAgent):
                             break
             logger.warning("All Gemini models in cycle exhausted or failed. Falling back to algorithmic agent loop.")
 
-        # Fallback / Offline deterministic agentic loop
+                                                       
         res = self._run_agentic_loop(topic, opponent_last_claim, turn_number, ctx)
         res["mode"] = "fallback"
         return res
@@ -170,7 +170,7 @@ class GeminiAgent(BaseAgent):
         contradiction_result = {"found": False, "conflicting_clauses": [], "proof_steps": []}
         generated_claim = None
 
-        # Loop through tool calls (up to 8 iterations)
+                                                      
         for _ in range(8):
             if not response.candidates or not response.candidates[0].content.parts:
                 break
@@ -183,10 +183,10 @@ class GeminiAgent(BaseAgent):
             fn_name = fn_call.name
             fn_args = dict(fn_call.args)
 
-            # Execute tool call via central executor
+                                                    
             tool_res = execute_tool(fn_name, fn_args, ctx)
 
-            # Capture traces
+                            
             if fn_name == "select_best_rebuttal" and tool_res.success:
                 mcts_trace = tool_res.output
             elif fn_name == "check_contradiction" and tool_res.success:
@@ -194,7 +194,7 @@ class GeminiAgent(BaseAgent):
             elif fn_name == "generate_claim" and tool_res.success:
                 generated_claim = tool_res.output
 
-            # Send function response protobuf cleanly to Gemini
+                                                               
             tool_proto = genai.protos.Part(
                 function_response=genai.protos.FunctionResponse(
                     name=fn_name,
@@ -203,7 +203,7 @@ class GeminiAgent(BaseAgent):
             )
             response = chat.send_message(tool_proto)
 
-        # If claim wasn't generated via API tool calls, run fallback claim generation
+                                                                                     
         if not generated_claim:
             res = self._run_agentic_loop(topic, opponent_last_claim, turn_number, ctx)
             res["mode"] = "fallback"
@@ -234,11 +234,11 @@ class GeminiAgent(BaseAgent):
         Deterministic algorithmic execution of the 5-step agentic loop.
         Replaces ONLY language generation — resolution and MCTS execute for real.
         """
-        # Step 1: Retrieve Fact
+                               
         fact_res = execute_tool("retrieve_relevant_fact", {"claim_topic": topic, "top_k": 1}, ctx)
         grounding_fact = fact_res.output.get("top_fact", f"Evidence supports structured evaluation of {topic}.")
 
-        # Step 2: MCTS Rebuttal Selection using topic knowledge engine with deduplication
+                                                                                         
         mcts_trace = None
         if self.agent_id == "agent_a":
             spoken = set(ctx.debate_state.own_claims)
@@ -253,11 +253,11 @@ class GeminiAgent(BaseAgent):
         if targeted and targeted not in candidates:
             candidates.insert(0, targeted)
 
-        # Filter out already spoken claims so MCTS evaluates new untried options
+                                                                                
         untried = [c for c in candidates if c not in spoken]
         eval_candidates = untried if untried else candidates
 
-        # Pick candidate via MCTS
+                                 
         mcts_res = execute_tool("select_best_rebuttal", {"candidates": eval_candidates[:5], "agent_id": self.agent_id}, ctx)
         if mcts_res.success:
             mcts_trace = mcts_res.output
@@ -265,7 +265,7 @@ class GeminiAgent(BaseAgent):
         else:
             chosen_claim = eval_candidates[0]
 
-        # Step 3: Formulate Claim + Propositional Form
+                                                      
         clean_topic = "".join(w.capitalize() for w in topic.split() if w.isalnum())[:15] or "Topic"
         prop_form = f"{clean_topic}ProT{turn_number}"
         claim_text = chosen_claim
@@ -281,11 +281,11 @@ class GeminiAgent(BaseAgent):
             ctx,
         )
 
-        # Step 4: Resolution Check (Always executes real resolution algorithm)
+                                                                              
         check_res = execute_tool("check_contradiction", {"target": "self", "agent_id": self.agent_id}, ctx)
         contradiction_result = check_res.output if check_res.success else {"found": False, "conflicting_clauses": [], "proof_steps": []}
 
-        # Step 5: Check combined cross-agent contradiction
+                                                          
         comb_res = execute_tool("check_contradiction", {"target": "combined", "agent_id": self.agent_id}, ctx)
         if comb_res.success and comb_res.output.get("found"):
             contradiction_result = comb_res.output

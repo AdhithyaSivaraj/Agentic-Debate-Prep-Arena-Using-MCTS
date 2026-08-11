@@ -43,10 +43,7 @@ Pass directly as the "tools" list in the OpenAI chat completions body:
     {"tools": [{"type": "function", "function": schema} for schema in TOOL_SCHEMAS]}
 """
 
-# ---------------------------------------------------------------------------
-# Tool 1: retrieve_relevant_fact
-# ---------------------------------------------------------------------------
-
+                                                                             
 RETRIEVE_RELEVANT_FACT_SCHEMA = {
     "name": "retrieve_relevant_fact",
     "description": (
@@ -81,10 +78,7 @@ RETRIEVE_RELEVANT_FACT_SCHEMA = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Tool 2: check_contradiction
-# ---------------------------------------------------------------------------
-
+                                                                             
 CHECK_CONTRADICTION_SCHEMA = {
     "name": "check_contradiction",
     "description": (
@@ -123,10 +117,7 @@ CHECK_CONTRADICTION_SCHEMA = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Tool 3: select_best_rebuttal
-# ---------------------------------------------------------------------------
-
+                                                                             
 SELECT_BEST_REBUTTAL_SCHEMA = {
     "name": "select_best_rebuttal",
     "description": (
@@ -168,10 +159,7 @@ SELECT_BEST_REBUTTAL_SCHEMA = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Tool 4: generate_claim
-# ---------------------------------------------------------------------------
-
+                                                                             
 GENERATE_CLAIM_SCHEMA = {
     "name": "generate_claim",
     "description": (
@@ -222,10 +210,7 @@ GENERATE_CLAIM_SCHEMA = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Master list — both agents import this
-# ---------------------------------------------------------------------------
-
+                                                                             
 TOOL_SCHEMAS: list[dict] = [
     RETRIEVE_RELEVANT_FACT_SCHEMA,
     CHECK_CONTRADICTION_SCHEMA,
@@ -233,13 +218,10 @@ TOOL_SCHEMAS: list[dict] = [
     GENERATE_CLAIM_SCHEMA,
 ]
 
-# Lookup by name — used by tool_executor.py
+                                           
 TOOL_SCHEMA_BY_NAME: dict[str, dict] = {s["name"]: s for s in TOOL_SCHEMAS}
 
-# ---------------------------------------------------------------------------
-# OpenRouter / OpenAI format wrapper
-# ---------------------------------------------------------------------------
-
+                                                                             
 def as_openai_tools(schemas: list[dict] = TOOL_SCHEMAS) -> list[dict]:
     """
     Wrap schemas in the OpenAI chat-completions "tools" format:

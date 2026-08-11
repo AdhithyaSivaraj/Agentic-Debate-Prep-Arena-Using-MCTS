@@ -5,7 +5,7 @@ import DebateSummaryModal from './DebateSummaryModal';
 import StatusRing from './StatusRing';
 import { startDebate, nextTurn, getTranscript, getDebateSummary } from '../lib/api';
 
-/* ── Scroll-reveal hook ─────────────────────────────── */
+
 function useRevealOnScroll() {
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -33,7 +33,7 @@ function formatModelName(modelStr) {
   return modelStr.split('/').pop();
 }
 
-/* ── Claim Entry Component ──────────────────── */
+
 function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef = null, autoScroll = true }) {
   const contradicted = turn.contradiction_result?.found;
   const propForm     = turn.claim?.propositional_form;
@@ -50,7 +50,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     ringRefSm.current?.pulse();
   };
 
-  // ResizeObserver to lock expanding card in vertical center of viewport
+  
   useEffect(() => {
     if (!isLatest || !autoScroll || !entryRef?.current) return;
 
@@ -78,14 +78,14 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     const fullText = turn.claim.text || '';
     const stepDelay = Math.max(12, Math.min(22, Math.floor(2200 / (fullText.length || 1))));
 
-    // 1. Start thinking for 400ms
+    
     setRingState('thinking');
     setShowMeta(false);
 
     const thinkingTimer = setTimeout(() => {
       if (!isMounted) return;
 
-      // 2. Flip to speaking & start fluid letter-by-letter text streaming
+      
       setRingState('speaking');
 
       const typeInterval = setInterval(() => {
@@ -104,7 +104,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
         if (charIdx >= fullText.length) {
           clearInterval(typeInterval);
 
-          // 3. Flip to done when typing completes
+          
           setTimeout(() => {
             if (isMounted) {
               setRingState('done');
@@ -135,7 +135,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
     >
       {isAgentA ? (
         <>
-          {/* Agent A Card (Left) */}
+          
           <div style={{ gridColumn: 1, justifySelf: 'end' }}>
             <div className="turn-frame" data-agent="a" data-state={ringState}>
               <div className="turn-panel">
@@ -184,7 +184,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
             </div>
           </div>
 
-          {/* Spine Ring (sm) replacing .turn-node */}
+          
           <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22, position: 'relative', zIndex: 2 }}>
             <StatusRing ref={ringRefSm} size="sm" state={ringState} agent="a" className="turn-node" />
           </div>
@@ -192,9 +192,9 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
         </>
       ) : (
         <>
-          {/* Agent B Card (Right) */}
+          
           <div style={{ gridColumn: 1 }} />
-          {/* Spine Ring (sm) replacing .turn-node */}
+          
           <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22, position: 'relative', zIndex: 2 }}>
             <StatusRing ref={ringRefSm} size="sm" state={ringState} agent="b" className="turn-node" />
           </div>
@@ -251,7 +251,7 @@ function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef
   );
 }
 
-/* ── Contradiction Entry Component ──────────────────── */
+
 function ContraEntry({ turn }) {
   const pairs = turn.contradiction_result?.conflicting_clauses || [];
   return (
@@ -280,7 +280,7 @@ function ContraEntry({ turn }) {
   );
 }
 
-/* ── MCTS Trace Entry Component ─────────────────────── */
+
 function MctsEntry({ mctsTrace, turnNumber }) {
   if (!mctsTrace) return null;
   const chosen   = mctsTrace.chosen_rebuttal;
@@ -296,14 +296,14 @@ function MctsEntry({ mctsTrace, turnNumber }) {
         How this rebuttal was chosen — MCTS trace, turn {turnNumber} ({nSims} simulations)
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {/* Selected Rebuttal */}
+        
         <div className="mcts-cand winner">
           <div style={{ fontSize: 13, color: 'var(--ink-primary)', lineHeight: 1.55, marginBottom: 6 }}>{chosen}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--valid)', fontWeight: 600 }}>
             score 0.78 — selected (highest visits)
           </div>
         </div>
-        {/* Rejected candidates */}
+        
         {rejected.map((c, i) => (
           <div key={i} className="mcts-cand" style={{ opacity: 0.5 }}>
             <div style={{ fontSize: 13, color: 'var(--ink-secondary)', lineHeight: 1.55, marginBottom: 6 }}>{c.text}</div>
@@ -317,7 +317,7 @@ function MctsEntry({ mctsTrace, turnNumber }) {
   );
 }
 
-/* ── Main Arena Component ───────────────────────────── */
+
 export default function DebateArena() {
   const [session,           setSession]           = useState(null);
   const [isLoading,         setIsLoading]         = useState(false);
@@ -327,20 +327,20 @@ export default function DebateArena() {
   const [activeSummary,     setActiveSummary]     = useState(null);
   const [showSetup,         setShowSetup]         = useState(true);
 
-  // Synchronous ref to track autoPlay state in real-time without closure lag
+  
   const autoPlayRef = useRef(false);
   const lastTurnRef = useRef(null);
 
   useRevealOnScroll();
 
-  /* Auto-scroll effect */
+  
   useEffect(() => {
     if (autoScroll && lastTurnRef.current && session?.turns?.length > 0) {
       lastTurnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [session?.turns?.length, autoScroll]);
 
-  /* Auto-play effect */
+  
   useEffect(() => {
     autoPlayRef.current = autoPlay;
     let timer;
@@ -402,7 +402,7 @@ export default function DebateArena() {
       await nextTurn(session.debate_id);
       const updated = await getTranscript(session.debate_id);
 
-      // Check if user clicked Pause while the request was in-flight
+      
       if (!autoPlayRef.current) {
         setSession(updated);
         return;
@@ -431,7 +431,7 @@ export default function DebateArena() {
     try {
       const data = await getDebateSummary(dId);
       setActiveSummary(data);
-      // Refresh transcript state so session.status === 'complete' is reflected in UI
+      
       const updatedSess = await getTranscript(dId);
       setSession(updatedSess);
     } catch (err) {
@@ -463,7 +463,7 @@ export default function DebateArena() {
     <div style={{ position: 'relative', minHeight: '100vh' }}>
       <ArgumentGraph opacity={0.35} />
 
-      {/* Sticky Header */}
+      
       <header style={{
         position: 'sticky',
         top: 0,
@@ -492,7 +492,7 @@ export default function DebateArena() {
           </div>
 
           <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Execution Group */}
+            
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <button
                 id="next-turn-btn"
@@ -527,7 +527,7 @@ export default function DebateArena() {
 
             <div style={{ width: 1, height: 24, backgroundColor: 'var(--border)' }} />
 
-            {/* Session Utilities Group */}
+            
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <button
                 id="verdict-btn"
@@ -551,14 +551,14 @@ export default function DebateArena() {
           </div>
         </div>
 
-        {/* Live session status */}
+        
         <div style={{ maxWidth: 1180, margin: '0 auto', paddingBottom: 12, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-secondary)' }}>
           <span className="live-dot" />
           session live — {formatModelName(propModelName)} × {formatModelName(oppModelName)} · MCTS + propositional resolution
         </div>
       </header>
 
-      {/* Spine & Timeline Content */}
+      
       <div style={{ maxWidth: 1180, margin: '0 auto', padding: '72px 48px 88px', position: 'relative', zIndex: 10 }}>
 
         {turns.length === 0 ? (
@@ -567,7 +567,7 @@ export default function DebateArena() {
           </div>
         ) : (
           <div style={{ position: 'relative' }}>
-            {/* Center vertical spine line — constrained strictly to turns container */}
+            
             <div style={{
               position: 'absolute',
               left: '50%',
@@ -606,7 +606,7 @@ export default function DebateArena() {
         )}
       </div>
 
-      {/* Verdict Summary Modal */}
+      
       {activeSummary && (
         <DebateSummaryModal summary={activeSummary} onClose={() => setActiveSummary(null)} />
       )}

@@ -40,14 +40,9 @@ from __future__ import annotations
 from typing import NamedTuple
 
 
-# ---------------------------------------------------------------------------
-# Type definitions
-# ---------------------------------------------------------------------------
-
-# A literal: either a plain string (positive) or a ("NOT", str) tuple (negated)
 Literal = str | tuple[str, str]
 
-# A clause: a frozenset of literals (disjunction)
+                                                 
 Clause = frozenset
 
 
@@ -66,10 +61,6 @@ class ContradictionResult(NamedTuple):
     proof_steps: list[str]
 
 
-# ---------------------------------------------------------------------------
-# Literal helpers
-# ---------------------------------------------------------------------------
-
 def negate(literal: Literal) -> Literal:
     """
     Return the negation of a literal.
@@ -77,8 +68,8 @@ def negate(literal: Literal) -> Literal:
         negate(("NOT", "P"))  →  "P"
     """
     if isinstance(literal, tuple) and literal[0] == "NOT":
-        return literal[1]          # double-negation elimination
-    return ("NOT", literal)        # wrap positive literal in NOT
+        return literal[1]                                       
+    return ("NOT", literal)                                      
 
 
 def literal_to_str(literal: Literal) -> str:
@@ -91,13 +82,9 @@ def literal_to_str(literal: Literal) -> str:
 def clause_to_str(clause: Clause) -> str:
     """Human-readable string for a clause — used in proof traces and UI."""
     if not clause:
-        return "⊥"   # empty clause = contradiction
+        return "⊥"                                 
     return " ∨ ".join(sorted(literal_to_str(lit) for lit in clause))
 
-
-# ---------------------------------------------------------------------------
-# Resolution rule
-# ---------------------------------------------------------------------------
 
 def resolve(c1: Clause, c2: Clause) -> set[Clause]:
     """
@@ -122,7 +109,7 @@ def resolve(c1: Clause, c2: Clause) -> set[Clause]:
     for literal in c1:
         complement = negate(literal)
         if complement in c2:
-            # Form the resolvent by removing the complementary pair
+                                                                   
             resolvent = frozenset(
                 (c1 - frozenset({literal})) | (c2 - frozenset({complement}))
             )
@@ -130,10 +117,6 @@ def resolve(c1: Clause, c2: Clause) -> set[Clause]:
 
     return resolvents
 
-
-# ---------------------------------------------------------------------------
-# Tautology check
-# ---------------------------------------------------------------------------
 
 def is_tautology(clause: Clause) -> bool:
     """
@@ -145,10 +128,6 @@ def is_tautology(clause: Clause) -> bool:
             return True
     return False
 
-
-# ---------------------------------------------------------------------------
-# Main contradiction check
-# ---------------------------------------------------------------------------
 
 def check_contradiction(kb: list[Clause]) -> ContradictionResult:
     """
@@ -169,20 +148,20 @@ def check_contradiction(kb: list[Clause]) -> ContradictionResult:
     For contradiction detection in a debate KB, no negated goal is needed — we just
     check whether the KB's own clauses are mutually consistent.
     """
-    # Working set of clauses — use a list to preserve insertion order for proof steps,
-    # and a set for fast membership testing.
+                                                                                      
+                                            
     clauses: list[Clause] = list(kb)
     clause_set: set[Clause] = set(kb)
 
     proof_steps: list[str] = []
     conflicting_pair: tuple[str, str] | None = None
 
-    # Iterative resolution — keep going until no new clause is added or ⊥ is found
+                                                                                  
     changed = True
     while changed:
         changed = False
-        # Generate all pairs — iterate over a snapshot so new additions
-        # are caught in the next outer iteration
+                                                                       
+                                                
         current_clauses = list(clauses)
         n = len(current_clauses)
 
@@ -198,7 +177,7 @@ def check_contradiction(kb: list[Clause]) -> ContradictionResult:
                         f"{{{clause_to_str(c2)}}}  →  {{{clause_to_str(resolvent)}}}"
                     )
 
-                    # Check for ⊥ (empty clause)
+                                                
                     if len(resolvent) == 0:
                         proof_steps.append(step_str)
                         conflicting_pair = (
@@ -211,28 +190,24 @@ def check_contradiction(kb: list[Clause]) -> ContradictionResult:
                             proof_steps=proof_steps,
                         )
 
-                    # Skip tautologies — they add no information
+                                                                
                     if is_tautology(resolvent):
                         continue
 
-                    # Add only genuinely new clauses
+                                                    
                     if resolvent not in clause_set:
                         proof_steps.append(step_str)
                         clause_set.add(resolvent)
                         clauses.append(resolvent)
                         changed = True
 
-    # Exhausted all resolvents — no ⊥ derived → KB is consistent
+                                                                
     return ContradictionResult(
         found=False,
         conflicting_clauses=[],
         proof_steps=proof_steps,
     )
 
-
-# ---------------------------------------------------------------------------
-# Convenience: parse implication strings into clauses
-# ---------------------------------------------------------------------------
 
 def implication_to_clause(antecedent: str, consequent: str) -> Clause:
     """

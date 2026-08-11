@@ -8,7 +8,7 @@ export default function MCTSTracePanel({ mctsTrace, turnNumber, onClose }) {
   const rejectedCandidates = mctsTrace.rejected_candidates || [];
   const nSimulations = mctsTrace.n_simulations || 10;
 
-  // Build a score context for relative bar widths
+  
   const allScores = rejectedCandidates.map(c => Math.abs(c.score));
   const maxScore = Math.max(...allScores, 0.01);
 
@@ -19,11 +19,11 @@ export default function MCTSTracePanel({ mctsTrace, turnNumber, onClose }) {
     >
       <div className="relative w-full max-w-2xl animate-modal bg-arena-surface border border-agentA-border/40 rounded-2xl shadow-2xl">
 
-        {/* Top accent stripe */}
+        
         <div className="h-1 w-full bg-gradient-to-r from-agentA-primary/80 via-agentA-primary to-agentA-primary/30 rounded-t-2xl" />
 
         <div className="p-6">
-          {/* Header */}
+          
           <div className="flex items-start justify-between mb-5">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-agentA-badge text-agentA-primary border border-agentA-border/40">
@@ -46,7 +46,7 @@ export default function MCTSTracePanel({ mctsTrace, turnNumber, onClose }) {
             </button>
           </div>
 
-          {/* Winner card */}
+          
           <div className="mb-5">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-agentA-primary mb-2 flex items-center gap-1">
               <Check className="w-3 h-3" /> Selected by MCTS
@@ -62,7 +62,7 @@ export default function MCTSTracePanel({ mctsTrace, turnNumber, onClose }) {
             </div>
           </div>
 
-          {/* Rejected candidates with score bars — staggered reveal */}
+          
           {rejectedCandidates.length > 0 && (
             <div className="mb-5">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-arena-muted mb-2 flex items-center gap-1">
@@ -79,7 +79,7 @@ export default function MCTSTracePanel({ mctsTrace, turnNumber, onClose }) {
                       <p className="text-[11px] text-arena-text mb-2 leading-relaxed line-clamp-2">
                         "{cand.text}"
                       </p>
-                      {/* Score bar */}
+                      
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1 bg-arena-border/60 rounded-full overflow-hidden">
                           <div
@@ -98,7 +98,7 @@ export default function MCTSTracePanel({ mctsTrace, turnNumber, onClose }) {
             </div>
           )}
 
-          {/* Explainability note */}
+          
           <div className="p-3 rounded-xl bg-arena-bg border border-arena-border/60 text-[11px] text-arena-muted flex items-start gap-2 mb-5">
             <Info className="w-3.5 h-3.5 text-agentA-primary shrink-0 mt-0.5" />
             <span>

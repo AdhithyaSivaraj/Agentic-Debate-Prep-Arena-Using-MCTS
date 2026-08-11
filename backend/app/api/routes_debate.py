@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory storage for active debate sessions (garbage collected per session)
+                                                                              
 DEBATE_SESSIONS: dict[str, dict[str, Any]] = {}
 
 
@@ -86,13 +86,13 @@ def start_debate(req: StartDebateRequest) -> StartDebateResponse:
 
     debate_id = uuid.uuid4().hex[:8]
 
-    # Always clear existing retrieval index to ensure clean, on-demand index creation per topic
+                                                                                               
     clear_index()
 
     proposer_model = req.proposer_model or "gemini-3.6-flash"
     opponent_model = req.opponent_model or "gemini-3.6-flash"
 
-    # Generate fact base on-demand for this topic using selected proposer model provider
+                                                                                        
     facts: list[FactRecord] = []
 
     if "versatile" in proposer_model or "instant" in proposer_model or "groq" in proposer_model.lower():
@@ -125,7 +125,7 @@ def start_debate(req: StartDebateRequest) -> StartDebateResponse:
     fact_texts = extract_fact_texts(facts)
     valid_clauses = extract_valid_clauses(facts)
 
-    # Build embedding function & FactIndex on-demand for this topic
+                                                                   
     if OPENROUTER_API_KEY:
         embed_fn = make_nemotron_embed_fn(OPENROUTER_API_KEY)
     else:
@@ -138,20 +138,20 @@ def start_debate(req: StartDebateRequest) -> StartDebateResponse:
         fact_index = build_index(fact_texts, _fallback_embed_fn)
         embed_fn = _fallback_embed_fn
 
-    # Helper to instantiate agent based on selected model
+                                                         
     def _create_agent(agent_id: str, role: str, model_name: str):
         if "/" in model_name or "llama" in model_name.lower() or "deepseek" in model_name.lower() or "nemotron" in model_name.lower():
             return NvidiaAgent(agent_id=agent_id, role=role, model_name=model_name)
         return GeminiAgent(agent_id=agent_id, role=role)
 
-    # Initialize agents with user-selected models
+                                                 
     proposer_model = req.proposer_model or "gemini-3.6-flash"
     opponent_model = req.opponent_model or "gemini-3.6-flash"
 
     agent_a = _create_agent("agent_a", "proposer", proposer_model)
     agent_b = _create_agent("agent_b", "opponent", opponent_model)
 
-    # Seed knowledge bases with initial clauses
+                                               
     for clause in valid_clauses[:len(valid_clauses) // 2]:
         agent_a.kb.tell(clause)
     for clause in valid_clauses[len(valid_clauses) // 2:]:
@@ -159,7 +159,7 @@ def start_debate(req: StartDebateRequest) -> StartDebateResponse:
 
     max_turns = req.max_turns if req.max_turns and req.max_turns > 0 else 20
 
-    # Save session state (scoped to debate_id, vanishes when session is cleared)
+                                                                                
     DEBATE_SESSIONS[debate_id] = {
         "debate_id": debate_id,
         "topic": topic,
@@ -220,14 +220,14 @@ def next_turn(req: NextTurnRequest) -> Turn:
     turns: list[Turn] = session["turns"]
     turn_number = len(turns) + 1
 
-    # Determine speaker
+                       
     is_agent_a = (turn_number % 2 != 0)
     current_agent = session["agent_a"] if is_agent_a else session["agent_b"]
     other_agent = session["agent_b"] if is_agent_a else session["agent_a"]
 
     opponent_last_claim = turns[-1].claim.text if turns else None
 
-    # Construct execution context
+                                 
     ctx = ExecutorContext(
         agent_kb=current_agent.kb,
         opponent_kb=other_agent.kb,
@@ -238,7 +238,7 @@ def next_turn(req: NextTurnRequest) -> Turn:
         agent_id=current_agent.agent_id,
     )
 
-    # Run agent turn
+                    
     res = current_agent.run_turn(
         topic=session["topic"],
         opponent_last_claim=opponent_last_claim,
@@ -246,7 +246,7 @@ def next_turn(req: NextTurnRequest) -> Turn:
         ctx=ctx,
     )
 
-    # Build Pydantic models for response
+                                        
     contradiction_data = res.get("contradiction_result", {})
     contradiction_result = ContradictionResult(
         found=contradiction_data.get("found", False),
@@ -272,7 +272,7 @@ def next_turn(req: NextTurnRequest) -> Turn:
             n_simulations=int(mcts_data.get("n_simulations", MCTS_N_SIMULATIONS)),
         )
 
-    # Update state score if contradiction found
+                                               
     if contradiction_result.found:
         if is_agent_a:
             session["debate_state"].contradictions_forced += 1
@@ -310,13 +310,13 @@ def next_turn(req: NextTurnRequest) -> Turn:
 
     turns.append(turn_obj)
 
-    # Check if max turns reached — synthesize final debate summary if so
+                                                                        
     if turn_number >= max_turns:
         session["status"] = "complete"
         session["summary"] = _synthesize_debate_summary(session)
         print(f"\n🏆 DEBATE COMPLETE! Summary generated for topic: '{session['topic']}'\n", flush=True)
 
-    # Terminal Log Output for debugging and tagging
+                                                   
     speaker_name = "Agent A (Gemini)" if is_agent_a else "Agent B (Nemotron)"
     print(f"\n--------------------------------------------------", flush=True)
     print(f" 📢 TURN #{turn_number}/{max_turns} | SPEAKER: {speaker_name}", flush=True)
@@ -449,7 +449,7 @@ def _generate_proposer_summary_debrief(
         f"}}\n"
     )
 
-    # 1. Try Groq if Groq model selected
+                                        
     if ("versatile" in proposer_model or "instant" in proposer_model or "groq" in proposer_model.lower()) and GROQ_API_KEY:
         try:
             from openai import OpenAI
@@ -467,7 +467,7 @@ def _generate_proposer_summary_debrief(
         except Exception as e:
             logger.warning(f"Groq summary debrief failed ({e}).")
 
-    # 2. Try NVIDIA if NVIDIA model selected
+                                            
     if ("/" in proposer_model or "llama" in proposer_model.lower() or "nemotron" in proposer_model.lower()) and NVIDIA_API_KEY:
         try:
             from openai import OpenAI
@@ -485,7 +485,7 @@ def _generate_proposer_summary_debrief(
         except Exception as e:
             logger.warning(f"NVIDIA summary debrief failed ({e}).")
 
-    # 3. Fallback to Groq LPU if GROQ_API_KEY available
+                                                       
     if GROQ_API_KEY:
         try:
             from openai import OpenAI
@@ -503,7 +503,7 @@ def _generate_proposer_summary_debrief(
         except Exception as e:
             logger.warning(f"Groq fallback summary debrief failed ({e}).")
 
-    # 4. Fallback to Gemini
+                           
     if GEMINI_API_KEY:
         try:
             import google.generativeai as genai
@@ -544,7 +544,7 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
 
     proposer_model = session.get("proposer_model", "gemini-3.6-flash")
 
-    # Generate Proposer Agent's Cornering & Escape Debrief
+                                                          
     debrief = _generate_proposer_summary_debrief(
         topic=topic,
         turns=turns,
@@ -684,7 +684,7 @@ def get_debate_summary(debate_id: str) -> DebateSummary:
         raise HTTPException(status_code=404, detail=f"Debate session '{debate_id}' not found")
 
     session = DEBATE_SESSIONS[debate_id]
-    session["status"] = "complete"  # Mark debate as completed when verdict/summary is generated
+    session["status"] = "complete"                                                              
     if not session.get("summary"):
         session["summary"] = _synthesize_debate_summary(session)
     return session["summary"]

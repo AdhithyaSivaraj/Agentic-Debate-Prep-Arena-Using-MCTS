@@ -28,7 +28,7 @@ class BaseAgent(ABC):
 
     def __init__(self, agent_id: str, role: str):
         self.agent_id = agent_id
-        self.role = role                    # "proposer" or "opponent"
+        self.role = role                                              
         self.kb = KnowledgeBase(agent_id)
 
     @abstractmethod

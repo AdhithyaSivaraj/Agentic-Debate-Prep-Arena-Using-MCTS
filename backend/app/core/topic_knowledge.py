@@ -15,10 +15,7 @@ from typing import Any
 from core.fact_generation import FactRecord
 from tools.tool_executor import parse_propositional_form
 
-# ---------------------------------------------------------------------------
-# Pre-packaged grounded domain knowledge sets
-# ---------------------------------------------------------------------------
-
+                                                                             
 PREPACKAGED_KNOWLEDGE: dict[str, dict[str, Any]] = {
     "hostel": {
         "pro_facts": [
@@ -450,7 +447,7 @@ def _extract_natural_subjects(topic: str) -> tuple[str, str]:
     """Extract natural, grammatically fluent Proposer & Opponent subject phrases from any debate topic."""
     t_lower = topic.lower().strip()
 
-    # Match prepackaged keys first
+                                  
     if any(w in t_lower for w in ["hostel", "hosteller", "dayscholar", "day scholar"]):
         return "campus hostel residency", "commuting as a day scholar"
     if "samsung dex" in t_lower:
@@ -460,7 +457,7 @@ def _extract_natural_subjects(topic: str) -> tuple[str, str]:
     if any(k in t_lower for k in ["ro machine", "ro water", "mud pot", "earthen pot", "clay pot", "water purifier"]) or re.search(r"\b(ro|r\.o\.)\b", t_lower):
         return "multi-stage RO water purification", "traditional earthenware clay pots"
 
-    # Comparison format: "A vs B" or "A or B"
+                                             
     for sep in [" vs ", " v ", " or ", " versus "]:
         if sep in t_lower:
             parts = re.split(re.escape(sep), t_lower, flags=re.IGNORECASE)
@@ -481,7 +478,7 @@ def _clean_phrase(phrase: str) -> str:
     p = re.sub(r"^(a|an|the)\s+", "", p, flags=re.IGNORECASE)
     p = " ".join(p.split()).strip(" ?.")
 
-    # Fix casing for known terms
+                                
     if "samsung dex" in p.lower():
         p = re.sub(r"\bsamsung dex\b", "Samsung DeX", p, flags=re.IGNORECASE)
 
@@ -666,7 +663,7 @@ def clean_claim_text(text: str) -> str:
 
     s = text.strip()
 
-    # Regex patterns for common LLM meta-intros
+                                               
     meta_patterns = [
         r"^(the|a)\s+(generated|proposed|final|selected)\s+(claim|response|answer|rebuttal|argument|point)\s+(is|says|states)?:?\s*",
         r"^here\s+is\s+the\s+(claim|response|rebuttal|argument|point):?\s*",
@@ -680,11 +677,11 @@ def clean_claim_text(text: str) -> str:
     for pat in meta_patterns:
         s = re.sub(pat, "", s, flags=re.IGNORECASE | re.MULTILINE).strip()
 
-    # Strip surrounding quotes if present
+                                         
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         s = s[1:-1].strip()
 
-    # Second pass in case stripping quotes revealed another meta prefix
+                                                                       
     for pat in meta_patterns:
         s = re.sub(pat, "", s, flags=re.IGNORECASE | re.MULTILINE).strip()
 

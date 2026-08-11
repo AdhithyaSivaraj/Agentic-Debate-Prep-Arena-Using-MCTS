@@ -60,7 +60,7 @@ class NemotronAgent(BaseAgent):
         """
         ctx.agent_id = self.agent_id
 
-        # Attempt OpenRouter API loop if key is available
+                                                         
         if self.api_key:
             try:
                 res = self._run_openrouter_api_loop(topic, opponent_last_claim, turn_number, ctx)
@@ -69,7 +69,7 @@ class NemotronAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"Nemotron OpenRouter API call failed ({e}). Falling back to algorithmic agent loop.")
 
-        # Fallback / Offline deterministic agentic loop
+                                                       
         res = self._run_agentic_loop(topic, opponent_last_claim, turn_number, ctx)
         res["mode"] = "fallback"
         return res
@@ -114,7 +114,7 @@ class NemotronAgent(BaseAgent):
         generated_claim = None
         claim_text = ""
 
-        # Loop through tool calls (up to 8 iterations)
+                                                      
         for _ in range(8):
             response = client.chat.completions.create(
                 model=NEMOTRON_CHAT_MODEL,
@@ -130,10 +130,10 @@ class NemotronAgent(BaseAgent):
                 claim_text = msg.content or ""
                 break
 
-            # Append assistant message with tool calls
+                                                      
             messages.append(msg.model_dump())
 
-            # Process each tool call
+                                    
             for tool_call in msg.tool_calls:
                 fn_name = tool_call.function.name
                 try:
@@ -143,7 +143,7 @@ class NemotronAgent(BaseAgent):
 
                 tool_res = execute_tool(fn_name, fn_args, ctx)
 
-                # Capture traces
+                                
                 if fn_name == "select_best_rebuttal" and tool_res.success:
                     mcts_trace = tool_res.output
                 elif fn_name == "check_contradiction" and tool_res.success:
@@ -151,7 +151,7 @@ class NemotronAgent(BaseAgent):
                 elif fn_name == "generate_claim" and tool_res.success:
                     generated_claim = tool_res.output
 
-                # Append tool response
+                                      
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -190,11 +190,11 @@ class NemotronAgent(BaseAgent):
         Deterministic algorithmic execution of the 5-step agentic loop.
         Replaces ONLY language generation — resolution and MCTS execute for real.
         """
-        # Step 1: Retrieve Fact
+                               
         fact_res = execute_tool("retrieve_relevant_fact", {"claim_topic": topic, "top_k": 1}, ctx)
         grounding_fact = fact_res.output.get("top_fact", f"Counter-evidence regarding {topic}.")
 
-        # Step 2: MCTS Rebuttal Selection using topic knowledge engine with deduplication
+                                                                                         
         mcts_trace = None
         spoken = set(ctx.debate_state.opponent_claims)
         candidates = get_topic_opponent_points(topic, spoken_claims=spoken)
@@ -202,11 +202,11 @@ class NemotronAgent(BaseAgent):
         if targeted and targeted not in candidates:
             candidates.insert(0, targeted)
 
-        # Filter out already spoken claims so MCTS evaluates new untried options
+                                                                                
         untried = [c for c in candidates if c not in spoken]
         eval_candidates = untried if untried else candidates
 
-        # Pick candidate via MCTS
+                                 
         mcts_res = execute_tool("select_best_rebuttal", {"candidates": eval_candidates[:5], "agent_id": self.agent_id}, ctx)
         if mcts_res.success:
             mcts_trace = mcts_res.output
@@ -214,7 +214,7 @@ class NemotronAgent(BaseAgent):
         else:
             chosen_claim = eval_candidates[0]
 
-        # Step 3: Formulate Claim + Propositional Form
+                                                      
         clean_topic = "".join(w.capitalize() for w in topic.split() if w.isalnum())[:15] or "Topic"
         prop_form = f"¬{clean_topic}ProT{turn_number}"
         claim_text = chosen_claim
@@ -230,11 +230,11 @@ class NemotronAgent(BaseAgent):
             ctx,
         )
 
-        # Step 4: Resolution Check (Always executes real resolution algorithm)
+                                                                              
         check_res = execute_tool("check_contradiction", {"target": "self", "agent_id": self.agent_id}, ctx)
         contradiction_result = check_res.output if check_res.success else {"found": False, "conflicting_clauses": [], "proof_steps": []}
 
-        # Step 5: Check combined cross-agent contradiction
+                                                          
         comb_res = execute_tool("check_contradiction", {"target": "combined", "agent_id": self.agent_id}, ctx)
         if comb_res.success and comb_res.output.get("found"):
             contradiction_result = comb_res.output

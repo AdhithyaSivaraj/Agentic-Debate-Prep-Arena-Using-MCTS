@@ -30,12 +30,12 @@ export default function ArgumentGraph({ opacity = 0.65 }) {
       const { width, height } = canvas;
       ctx.clearRect(0, 0, width, height);
 
-      // Read current theme colors from CSS variables
+      
       const computed = getComputedStyle(document.documentElement);
       const edgeColor = computed.getPropertyValue('--graph-edge').trim() || '167, 139, 250';
       const nodeColor = computed.getPropertyValue('--graph-node').trim() || '240, 236, 255';
 
-      // Move nodes
+      
       for (const n of nodesRef.current) {
         n.x += n.vx;
         n.y += n.vy;
@@ -43,7 +43,7 @@ export default function ArgumentGraph({ opacity = 0.65 }) {
         if (n.y < 0 || n.y > height) n.vy *= -1;
       }
 
-      // Draw connecting edges
+      
       const nodes = nodesRef.current;
       for (let i = 0; i < N; i++) {
         for (let j = i + 1; j < N; j++) {
@@ -62,14 +62,14 @@ export default function ArgumentGraph({ opacity = 0.65 }) {
         }
       }
 
-      // Draw glowing nodes
+      
       for (const n of nodes) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${nodeColor}, 0.75)`;
         ctx.fill();
 
-        // Subtle glow halo
+        
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r * 2.5, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${edgeColor}, 0.15)`;

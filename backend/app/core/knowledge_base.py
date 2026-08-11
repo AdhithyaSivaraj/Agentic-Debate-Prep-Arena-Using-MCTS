@@ -46,14 +46,11 @@ class KnowledgeBase:
                       Used for logging and debugging — not logic-critical.
         """
         self.agent_id: str = agent_id
-        self._clauses: list[Clause] = []              # own KB — accumulated own claims
-        self._opponent_clauses: list[Clause] = []     # opponent's KB (tracked separately)
-        self._history: list[str] = []                 # human-readable claim history (for UI)
+        self._clauses: list[Clause] = []                                               
+        self._opponent_clauses: list[Clause] = []                                         
+        self._history: list[str] = []                                                        
 
-    # ------------------------------------------------------------------
-    # TELL — assert a new clause
-    # ------------------------------------------------------------------
-
+                                                                        
     def tell(self, clause: Clause, human_readable: str = "") -> None:
         """
         TELL: assert a new propositional clause into this agent's knowledge base.
@@ -82,10 +79,7 @@ class KnowledgeBase:
         if human_readable:
             self._history.append(f"[opponent] {human_readable}")
 
-    # ------------------------------------------------------------------
-    # ASK — query the KB via resolution
-    # ------------------------------------------------------------------
-
+                                                                        
     def ask_contradiction(self) -> ContradictionResult:
         """
         ASK: run propositional resolution refutation over all clauses in this KB.
@@ -113,10 +107,7 @@ class KnowledgeBase:
         combined = self._clauses + self._opponent_clauses
         return check_contradiction(combined)
 
-    # ------------------------------------------------------------------
-    # Inspection / utility
-    # ------------------------------------------------------------------
-
+                                                                        
     def get_all_clauses(self) -> list[Clause]:
         """Return a snapshot of all own clauses currently in the KB."""
         return list(self._clauses)

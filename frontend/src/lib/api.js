@@ -1,6 +1,4 @@
-/**
- * API client library for the Agentic Debate Arena backend.
- */
+
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -20,7 +18,7 @@ async function fetchJSON(endpoint, options = {}) {
       const errData = await response.json();
       errorMsg = errData.detail || errData.message || errorMsg;
     } catch {
-      // Ignore JSON parse error for error responses
+      
     }
     throw new Error(errorMsg);
   }

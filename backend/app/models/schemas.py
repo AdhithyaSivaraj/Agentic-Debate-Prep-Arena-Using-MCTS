@@ -33,17 +33,17 @@ class NextTurnRequest(BaseModel):
 class Claim(BaseModel):
     """A single claim made by one agent in one turn."""
     text: str
-    speaker: str                  # "agent_a" or "agent_b"
+    speaker: str                                          
     turn_number: int
-    propositional_form: str       # normalized clause form (e.g., "Exams → StressHigh")
+    propositional_form: str                                                            
     is_contradicted: bool = False
 
 
 class ContradictionResult(BaseModel):
     """Contradiction detection result from the resolution algorithm."""
     found: bool
-    conflicting_clauses: list[list[str]]  # list of clause-string pairs
-    proof_steps: list[str]                # human-readable derivation trace for UI
+    conflicting_clauses: list[list[str]]                               
+    proof_steps: list[str]                                                        
 
 
 class RejectedCandidate(BaseModel):
@@ -66,15 +66,15 @@ class Turn(BaseModel):
     turn_number: int
     claim: Claim
     contradiction_result: ContradictionResult
-    mcts_trace: MCTSTrace | None = None  # None if MCTS was not invoked this turn
-    mode: str = "live"                   # "live" (real LLM API) or "fallback" (offline fallback)
+    mcts_trace: MCTSTrace | None = None                                          
+    mode: str = "live"                                                                           
 
 
 class CorneringPoint(BaseModel):
     """A high-risk argument made during debate that could corner a debater, plus its best counter-reply and escape route."""
     point: str
-    speaker: str                 # "Agent A (Proposer)" | "Agent B (Opponent)"
-    risk_level: str              # "CRITICAL VULNERABILITY" | "HIGH THREAT" | "TACTICAL CORNER"
+    speaker: str                                                              
+    risk_level: str                                                                            
     why_dangerous: str
     best_reply: str
     escape_route: str | None = None
@@ -85,15 +85,15 @@ class DebateSummary(BaseModel):
     debate_id: str
     topic: str
     total_turns: int
-    winner: str                    # "Agent A (Proposer)" | "Agent B (Opponent)" | "Draw / Balanced"
+    winner: str                                                                                     
     winner_reasoning: str
     proposer_key_points: list[str]
     opponent_key_points: list[str]
     total_contradictions: int
     verdict_statement: str
-    proposer_cornered_analysis: str = ""    # Where Proposer can be cornered & defense
-    opponent_cornered_analysis: str = ""    # Where Opponent can be cornered
-    opponent_escape_route: str = ""         # If Opponent is cornered, how Opponent can escape
+    proposer_cornered_analysis: str = ""                                              
+    opponent_cornered_analysis: str = ""                                    
+    opponent_escape_route: str = ""                                                           
     cornering_points: list[CorneringPoint] = []
     proposer_full_arguments: list[str] = []
     opponent_full_arguments: list[str] = []
@@ -106,7 +106,7 @@ class DebateSession(BaseModel):
     max_turns: int = 20
     proposer_model: str = "gemini-3.6-flash"
     opponent_model: str = "gemini-3.6-flash"
-    fact_base: list[str]          # raw fact strings for reference
+    fact_base: list[str]                                          
     turns: list[Turn] = []
-    status: str = "not_started"   # "not_started" | "running" | "complete"
+    status: str = "not_started"                                           
     summary: DebateSummary | None = None

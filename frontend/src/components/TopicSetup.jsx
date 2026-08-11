@@ -63,7 +63,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
 
   const docketNo = useRef(String(docketCounter).padStart(4, '0'));
 
-  /* Derivation typewriter sequence */
+  
   useEffect(() => {
     let idx = 0;
     const show = () => {
@@ -79,7 +79,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
     return () => clearTimeout(t);
   }, []);
 
-  /* Auto Type & Auto Backspace Animation Loop for Input Field */
+  
   useEffect(() => {
     if (userInteracted) return;
 
@@ -108,10 +108,10 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
 
         if (charIndex === currentTopic.length) {
           isDeleting = true;
-          timerId = setTimeout(typeStep, 2200); // Pause on full topic
+          timerId = setTimeout(typeStep, 2200); 
           return;
         }
-        timerId = setTimeout(typeStep, 45); // Typing speed
+        timerId = setTimeout(typeStep, 45); 
       }
     };
 
@@ -128,7 +128,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   const handleInputFocus = () => {
     if (!userInteracted) {
       setUserInteracted(true);
-      setTopic(''); // Clear input content on click/focus so user can type immediately
+      setTopic(''); 
     }
   };
 
@@ -152,10 +152,10 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
-      {/* Prominent living graph background canvas */}
+      
       <ArgumentGraph opacity={0.65} />
 
-      {/* Theme selector top right */}
+      
       <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 20 }}>
         <ThemeSwitcher />
       </div>
@@ -171,12 +171,12 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
           margin: '0 auto',
         }}>
 
-          {/* Eyebrow */}
+          
           <div className="anim-fade-up" style={{ animationDelay: '0.08s', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 20 }}>
             Logic-verified argument coaching engine
           </div>
 
-          {/* Derivation typewriter */}
+          
           <div style={{ marginBottom: 12, minHeight: 64 }}>
             {deriveLines.map((line, i) => (
               <div key={i} className="derive-line show" style={{ animationDelay: `${i * 0.04}s` }}>
@@ -185,7 +185,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
             ))}
           </div>
 
-          {/* Main Title */}
+          
           <h1
             className={`anim-title ${titleVisible ? 'reveal' : ''}`}
             style={{
@@ -202,7 +202,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
             Agentic <em style={{ fontStyle: 'italic', color: 'var(--agent-b)' }}>Debate</em> Arena
           </h1>
 
-          {/* Subtitle */}
+          
           <p
             className="anim-fade-up"
             style={{
@@ -219,7 +219,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
           </p>
 
           <form onSubmit={handleSubmit}>
-            {/* Docket input container */}
+            
             <div
               className="anim-fade-up docket-container"
               style={{ animationDelay: '0.6s', maxWidth: 640, marginBottom: 16, position: 'relative' }}
@@ -255,7 +255,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                 )}
               </div>
 
-              {/* Model Selectors Row */}
+              
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
@@ -328,7 +328,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                 </div>
               </div>
 
-              {/* Resolution Bottom Bar */}
+              
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -360,7 +360,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
               </div>
             </div>
 
-            {/* Topic Suggestions */}
+            
             <div
               className="anim-fade-up"
               style={{
@@ -385,7 +385,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
               ))}
             </div>
 
-            {/* CTA */}
+            
             <div className="anim-fade-up" style={{ animationDelay: '0.85s', display: 'flex', alignItems: 'center', gap: 14 }}>
               <button
                 type="submit"
@@ -404,7 +404,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
             </div>
           </form>
 
-          {/* Footer units */}
+          
           <div
             className="anim-fade-up"
             style={{
@@ -418,7 +418,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
             Unit IV — propositional resolution · Unit III — Monte Carlo tree search · Unit II — semantic retrieval
           </div>
 
-          {/* Scroll cue */}
+          
           <div
             className="anim-fade-up"
             style={{
