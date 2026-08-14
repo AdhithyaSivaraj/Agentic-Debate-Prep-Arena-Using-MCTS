@@ -19,7 +19,7 @@ import numpy as np
 
 from agents.gemini_agent import GeminiAgent
 from agents.nemotron_agent import NemotronAgent
-from agents.nvidia_agent import NvidiaAgent
+from agents.nvidia_agent import NvidiaAgent, is_groq_model
 from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_FALLBACKS, OPENROUTER_API_KEY, NVIDIA_API_KEY, NVIDIA_BASE_URL, GROQ_API_KEY, GROQ_BASE_URL, MCTS_N_SIMULATIONS, FACT_BASE_SIZE
 from core.fact_generation import (
     FactRecord,
@@ -28,7 +28,7 @@ from core.fact_generation import (
     generate_fact_base,
     generate_fact_base_openai,
 )
-from core.topic_knowledge import get_topic_grounded_facts, get_targeted_rebuttal
+from core.topic_knowledge import get_topic_grounded_facts, get_targeted_rebuttal, clean_claim_text
 from core.mcts import DebateState
 from core.retrieval import FactIndex, build_index, clear_index, make_nemotron_embed_fn
 from models.schemas import (
@@ -353,7 +353,7 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
             from openai import OpenAI
             client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
             model_name = "llama-3.3-70b-versatile"
-            if model_hint and ("versatile" in model_hint or "instant" in model_hint or "deepseek" in model_hint.lower() or "qwen" in model_hint.lower()):
+            if model_hint and is_groq_model(model_hint):
                 model_name = model_hint
             res = client.chat.completions.create(
                 model=model_name,
@@ -450,7 +450,7 @@ def _generate_proposer_summary_debrief(
     )
 
                                         
-    if ("versatile" in proposer_model or "instant" in proposer_model or "deepseek" in proposer_model.lower() or "qwen" in proposer_model.lower() or "groq" in proposer_model.lower()) and GROQ_API_KEY:
+    if is_groq_model(proposer_model) and GROQ_API_KEY:
         try:
             from openai import OpenAI
             client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)

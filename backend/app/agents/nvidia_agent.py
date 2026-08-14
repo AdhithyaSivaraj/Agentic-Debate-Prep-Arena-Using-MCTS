@@ -25,6 +25,13 @@ from tools.tool_executor import ExecutorContext, execute_tool, parse_proposition
 logger = logging.getLogger(__name__)
 
 
+def is_groq_model(model_name: str) -> bool:
+    if not model_name:
+        return False
+    m = model_name.lower()
+    return any(k in m for k in ["versatile", "instant", "deepseek", "qwen", "groq", "llama-3.3-70b", "llama-3.1-70b", "llama-3.1-8b"])
+
+
 class NvidiaAgent(BaseAgent):
     """
     Agent powered by NVIDIA NIM or Groq LPU models (OpenAI-compatible chat completions format).
@@ -41,7 +48,7 @@ class NvidiaAgent(BaseAgent):
     ):
         super().__init__(agent_id=agent_id, role=role)
         self.model_name = model_name or NVIDIA_MODEL_FALLBACKS[0]
-        if "versatile" in self.model_name or "instant" in self.model_name or "deepseek" in self.model_name.lower() or "qwen" in self.model_name.lower() or "groq" in self.model_name.lower():
+        if is_groq_model(self.model_name):
             self.base_url = GROQ_BASE_URL
             self.api_key = api_key or GROQ_API_KEY
         else:
@@ -58,7 +65,7 @@ class NvidiaAgent(BaseAgent):
 
     def decide(self, percept: dict) -> dict:
         """Stub implementation for BaseAgent abstract method."""
-        return percept
+        return {}
 
     def act(self, action: dict) -> str:
         """Stub implementation for BaseAgent abstract method."""
@@ -72,13 +79,15 @@ class NvidiaAgent(BaseAgent):
         ctx: ExecutorContext,
     ) -> dict[str, Any]:
         """
-        Run the autonomous agentic loop for NVIDIA/Groq Agent for one debate turn.
+        Main entrypoint to run a single turn for this agent.
+        Tries primary model, then fallbacks if rate-limited, and falls back to pure local logic if all API attempts fail.
         """
-        ctx.agent_id = self.agent_id
-
-                                                                    
         import time
-        models_to_try = [self.model_name] + [m for m in NVIDIA_MODEL_FALLBACKS if m != self.model_name]
+        if is_groq_model(self.model_name):
+            groq_fallbacks = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"]
+            models_to_try = [self.model_name] + [m for m in groq_fallbacks if m != self.model_name]
+        else:
+            models_to_try = [self.model_name] + [m for m in NVIDIA_MODEL_FALLBACKS if m != self.model_name]
 
         for current_model in models_to_try:
             for attempt in range(2):
@@ -102,7 +111,6 @@ class NvidiaAgent(BaseAgent):
 
         logger.warning("All models failed. Falling back to algorithmic agent loop.")
 
-                                                       
         res = self._run_agentic_loop(topic, opponent_last_claim, turn_number, ctx)
         res["mode"] = "fallback"
         return res
@@ -120,7 +128,7 @@ class NvidiaAgent(BaseAgent):
         """
         from openai import OpenAI
 
-        if "versatile" in model_name or "instant" in model_name or "groq" in model_name.lower():
+        if is_groq_model(model_name):
             target_url = GROQ_BASE_URL
             target_key = GROQ_API_KEY or self.api_key
         else:
