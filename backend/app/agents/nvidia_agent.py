@@ -41,7 +41,7 @@ class NvidiaAgent(BaseAgent):
     ):
         super().__init__(agent_id=agent_id, role=role)
         self.model_name = model_name or NVIDIA_MODEL_FALLBACKS[0]
-        if "versatile" in self.model_name or "instant" in self.model_name or "groq" in self.model_name.lower():
+        if "versatile" in self.model_name or "instant" in self.model_name or "deepseek" in self.model_name.lower() or "qwen" in self.model_name.lower() or "groq" in self.model_name.lower():
             self.base_url = GROQ_BASE_URL
             self.api_key = api_key or GROQ_API_KEY
         else:

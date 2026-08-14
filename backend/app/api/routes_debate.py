@@ -353,7 +353,7 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
             from openai import OpenAI
             client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
             model_name = "llama-3.3-70b-versatile"
-            if model_hint and ("versatile" in model_hint or "instant" in model_hint):
+            if model_hint and ("versatile" in model_hint or "instant" in model_hint or "deepseek" in model_hint.lower() or "qwen" in model_hint.lower()):
                 model_name = model_hint
             res = client.chat.completions.create(
                 model=model_name,
@@ -450,7 +450,7 @@ def _generate_proposer_summary_debrief(
     )
 
                                         
-    if ("versatile" in proposer_model or "instant" in proposer_model or "groq" in proposer_model.lower()) and GROQ_API_KEY:
+    if ("versatile" in proposer_model or "instant" in proposer_model or "deepseek" in proposer_model.lower() or "qwen" in proposer_model.lower() or "groq" in proposer_model.lower()) and GROQ_API_KEY:
         try:
             from openai import OpenAI
             client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
