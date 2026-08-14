@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-08-14T08:36:00.000Z" agent="AntigravityAI" version="21.0.0" type="device">
+  <diagram id="AgenticDebateArenaWorkflow" name="Agentic Debate Arena Architecture &amp; Workflow">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- TITLE CONTAINER -->
+        <mxCell id="title" value="&lt;b style='font-size:20px; color:#ffffff;'&gt;AGENTS DEBATE ARENA — SYSTEM ARCHITECTURE &amp;amp; END-TO-END WORKFLOW&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:12px; color:#94a3b8;'&gt;Neuro-Symbolic Logic Verification, Monte Carlo Tree Search (MCTS) &amp;amp; Multi-Model LLM Orchestration&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#3b82f6;strokeWidth=2;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1720" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- SECTION 1: USER INITIALIZATION LAYER -->
+        <mxCell id="sec1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e293b;strokeColor=#475569;strokeWidth=1;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="1720" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="sec1_lbl" value="&lt;b style='font-size:14px; color:#60a5fa;'&gt;PHASE 1: SESSION INITIALIZATION &amp;amp; FACT GROUNDING&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="130" width="450" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_user" value="&lt;b style='color:#38bdf8;'&gt;1. User Topic Setup&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Frontend Landing Page (&lt;i&gt;TopicSetup.jsx&lt;/i&gt;)&lt;br/&gt;- Enters debate topic&lt;br/&gt;- Selects Agent A &amp;amp; B LLMs (Groq LPU 70B default)&lt;br/&gt;- Configures Max Turns (e.g. 20)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#0284c7;strokeWidth=2;fontColor=#f8fafc;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="170" width="280" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_api_start" value="&lt;b style='color:#38bdf8;'&gt;2. POST /start-debate&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;FastAPI Backend (&lt;i&gt;routes_debate.py&lt;/i&gt;)&lt;br/&gt;- Generates unique &lt;i&gt;session_id&lt;/i&gt;&lt;br/&gt;- Initializes &lt;i&gt;DebateState&lt;/i&gt;&lt;br/&gt;- Instantiates Agent A &amp;amp; Agent B&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#0284c7;strokeWidth=2;fontColor=#f8fafc;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="170" width="280" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_facts" value="&lt;b style='color:#38bdf8;'&gt;3. Grounded Fact Generation&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;On-Demand Fact Engine (&lt;i&gt;fact_generation.py&lt;/i&gt;)&lt;br/&gt;- Generates 20 grounded factual statements&lt;br/&gt;- Converts facts into Propositional Clauses&lt;br/&gt;- Checks prepackaged domain knowledge&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#0284c7;strokeWidth=2;fontColor=#f8fafc;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="750" y="170" width="280" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_vector_index" value="&lt;b style='color:#38bdf8;'&gt;4. Vector Index Building&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Dense Vector Embeddings (&lt;i&gt;retrieval.py&lt;/i&gt;)&lt;br/&gt;- Computes embeddings for all 20 facts&lt;br/&gt;- Builds in-memory &lt;i&gt;FactIndex&lt;/i&gt;&lt;br/&gt;- Prepares Cosine Similarity matrix&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#0284c7;strokeWidth=2;fontColor=#f8fafc;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="170" width="280" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step_arena_ready" value="&lt;b style='color:#38bdf8;'&gt;5. Arena Render Ready&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;React Cognitive Arena (&lt;i&gt;DebateArena.jsx&lt;/i&gt;)&lt;br/&gt;- Renders dynamic 1180px timeline layout&lt;br/&gt;- Initializes control toolbar (&lt;i&gt;Next Turn&lt;/i&gt;, &lt;i&gt;Auto-Run&lt;/i&gt;, &lt;i&gt;Auto-Scroll&lt;/i&gt;)&lt;br/&gt;- Sets vertical spine line bounds&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#0284c7;strokeWidth=2;fontColor=#f8fafc;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="1430" y="170" width="280" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- SECTION 2: TURN EXECUTION LOOP (CORE NEURO-SYMBOLIC ENGINE) -->
+        <mxCell id="sec2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e293b;strokeColor=#475569;strokeWidth=1;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="1720" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="sec2_lbl" value="&lt;b style='font-size:14px; color:#34d399;'&gt;PHASE 2: RECURSIVE TURN EXECUTION LOOP (POST /next-turn)&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="500" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_speaker" value="&lt;b style='color:#a7f3d0;'&gt;Step A: Speaker Alternation&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;- Turn 1, 3, 5... : Agent A (Proposer)&lt;br/&gt;- Turn 2, 4, 6... : Agent B (Opponent)&lt;br/&gt;- Fetches opponent's last claim&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;strokeWidth=2;fontColor=#ecfdf5;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="430" width="240" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_vector" value="&lt;b style='color:#a7f3d0;'&gt;Step B: Semantic Vector Search&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Vector Engine (&lt;i&gt;retrieval.py&lt;/i&gt;)&lt;br/&gt;- Executes &lt;i&gt;retrieve_relevant_fact&lt;/i&gt;&lt;br/&gt;- Computes cosine similarity over topic&lt;br/&gt;- Extracts top-1 grounded evidence fact&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;strokeWidth=2;fontColor=#ecfdf5;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="360" y="430" width="250" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_mcts" value="&lt;b style='color:#a7f3d0;'&gt;Step C: MCTS Lookahead Search&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Strategy Planner (&lt;i&gt;mcts.py&lt;/i&gt;)&lt;br/&gt;- Runs 10 MCTS simulations with UCB1&lt;br/&gt;- Filters spoken claims in &lt;i&gt;own/opponent_claims&lt;/i&gt;&lt;br/&gt;- Evaluates candidate heuristic scores&lt;br/&gt;- Selects optimal rebuttal direction&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;strokeWidth=2;fontColor=#ecfdf5;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="660" y="430" width="270" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_llm" value="&lt;b style='color:#a7f3d0;'&gt;Step D: Single-Pass LLM Verbalizer&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Groq LPU / NVIDIA NIM / Gemini API&lt;br/&gt;- Receives grounded fact &amp;amp; MCTS rebuttal&lt;br/&gt;- Generates 1-2 sentence persuasive claim&lt;br/&gt;- Emits Propositional Clause Identifier&lt;br/&gt;- Executed in sub-1.5s single API pass&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;strokeWidth=2;fontColor=#ecfdf5;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="980" y="430" width="270" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_sanitize" value="&lt;b style='color:#a7f3d0;'&gt;Step E: Claim Text Sanitizer&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Sanitizer (&lt;i&gt;topic_knowledge.py&lt;/i&gt;)&lt;br/&gt;- Strips LLM meta-prefixes (&lt;i&gt;&quot;The claim is:&quot;&lt;/i&gt;)&lt;br/&gt;- Cleans quotes &amp;amp; introductory statements&lt;br/&gt;- Ensures pure, confident statement text&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;strokeWidth=2;fontColor=#ecfdf5;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="430" width="250" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_cnf" value="&lt;b style='color:#fde68a;'&gt;Step F: Propositional Resolution Prover&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Symbolic Logic Engine (&lt;i&gt;resolution.py&lt;/i&gt;)&lt;br/&gt;- Converts clause to Conjunctive Normal Form (CNF)&lt;br/&gt;- Runs pair-wise resolution against agent &amp;amp; combined KB&lt;br/&gt;- DERIVES EMPTY CLAUSE (⊥) IF CONTRADICTION PROVEN&lt;br/&gt;- Updates contradiction counts in state&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#78350f;strokeColor=#f59e0b;strokeWidth=2;fontColor=#fffbeb;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="360" y="600" width="420" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_state" value="&lt;b style='color:#fde68a;'&gt;Step G: State Recording &amp;amp; Deduplication&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;State Handler (&lt;i&gt;routes_debate.py&lt;/i&gt;)&lt;br/&gt;- Records spoken claim text in &lt;i&gt;own_claims/opponent_claims&lt;/i&gt;&lt;br/&gt;- Appends chosen rebuttal to history&lt;br/&gt;- GUARANTEES ZERO REPETITIVE POINTS ACROSS ALL TURNS&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#78350f;strokeColor=#f59e0b;strokeWidth=2;fontColor=#fffbeb;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="830" y="600" width="420" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop_ui_render" value="&lt;b style='color:#a7f3d0;'&gt;Step H: Frontend UI Centered Streaming&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;React UI (&lt;i&gt;DebateArena.jsx&lt;/i&gt;)&lt;br/&gt;- Letter-by-letter typewriter animation at 60fps (~16ms/char)&lt;br/&gt;- &lt;b&gt;ResizeObserver Viewport Centering:&lt;/b&gt; keeps card locked in center as height grows&lt;br/&gt;- Renders MCTS Trace Panel &amp;amp; Resolution Contradiction alert badges&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;strokeWidth=2;fontColor=#ecfdf5;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="360" y="750" width="890" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- SECTION 3: POST-DEBATE VERDICT & TACTICAL COACHING -->
+        <mxCell id="sec3_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e293b;strokeColor=#475569;strokeWidth=1;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="40" y="920" width="1720" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="sec3_lbl" value="&lt;b style='font-size:14px; color:#c084fc;'&gt;PHASE 3: POST-DEBATE VERDICT &amp;amp; STRATEGIC DEBRIEF&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="930" width="500" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="verdict_trigger" value="&lt;b style='color:#e9d5ff;'&gt;1. Verdict Trigger&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;- Max turns reached (e.g. 20/20)&lt;br/&gt;OR&lt;br/&gt;- User clicks &lt;i&gt;🏆 Verdict&lt;/i&gt; button&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#581c87;strokeColor=#a855f7;strokeWidth=2;fontColor=#faf5ff;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="970" width="250" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="verdict_synth" value="&lt;b style='color:#e9d5ff;'&gt;2. Executive Winner Synthesis&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Backend Evaluator (&lt;i&gt;routes_debate.py&lt;/i&gt;)&lt;br/&gt;- Computes score: &lt;i&gt;(Forced - Received) + 0.1*(Own - Opponent)&lt;/i&gt;&lt;br/&gt;- Declares Winner (Proposer, Opponent, or Draw)&lt;br/&gt;- Generates concrete counter-arguments for top attacks&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#581c87;strokeColor=#a855f7;strokeWidth=2;fontColor=#faf5ff;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="370" y="970" width="340" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="verdict_debrief" value="&lt;b style='color:#e9d5ff;'&gt;3. Proposer Strategic Debrief&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;Proposer Agent Analysis (&lt;i&gt;_generate_proposer_summary_debrief&lt;/i&gt;)&lt;br/&gt;- &lt;b&gt;Proposer Vulnerability Analysis:&lt;/b&gt; Where Proposer can be cornered &amp;amp; defenses&lt;br/&gt;- &lt;b&gt;Opponent Trap Analysis:&lt;/b&gt; Where Opponent gets cornered&lt;br/&gt;- &lt;b&gt;Opponent Escape Maneuver:&lt;/b&gt; How opponent can escape trap&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#581c87;strokeColor=#a855f7;strokeWidth=2;fontColor=#faf5ff;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="760" y="970" width="460" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="verdict_modal" value="&lt;b style='color:#e9d5ff;'&gt;4. Tactical Coaching Modal&lt;/b&gt;&lt;br/&gt;&lt;span style='font-size:11px;'&gt;React Modal (&lt;i&gt;DebateSummaryModal.jsx&lt;/i&gt;)&lt;br/&gt;- Displays Executive Verdict Card&lt;br/&gt;- Renders Proposer Strategic Debrief card&lt;br/&gt;- Displays Opponent Escape Tactical Maneuver badges&lt;br/&gt;- Offers full transcript export &amp;amp; replay&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#581c87;strokeColor=#a855f7;strokeWidth=2;fontColor=#faf5ff;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="970" width="440" height="150" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES / CONNECTIONS -->
+
+        <!-- Phase 1 Edges -->
+        <mxCell id="e1" value="Submits Setup" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284c7;strokeWidth=2;fontColor=#38bdf8;fontSize=11;" edge="1" parent="1" source="step_user" target="step_api_start">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="Requests Facts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284c7;strokeWidth=2;fontColor=#38bdf8;fontSize=11;" edge="1" parent="1" source="step_api_start" target="step_facts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="Builds Embeddings" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284c7;strokeWidth=2;fontColor=#38bdf8;fontSize=11;" edge="1" parent="1" source="step_facts" target="step_vector_index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="Initializes UI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0284c7;strokeWidth=2;fontColor=#38bdf8;fontSize=11;" edge="1" parent="1" source="step_vector_index" target="step_arena_ready">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 1 to Phase 2 Edge -->
+        <mxCell id="e5" value="Next Turn Click / Auto-Run" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;" edge="1" parent="1" source="step_arena_ready" target="loop_speaker">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1570" y="340" />
+              <mxPoint x="190" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Phase 2 Edges -->
+        <mxCell id="e6" value="Perceives State" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;" edge="1" parent="1" source="loop_speaker" target="loop_vector">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="Grounded Fact" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;" edge="1" parent="1" source="loop_vector" target="loop_mcts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="MCTS Rebuttal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;" edge="1" parent="1" source="loop_mcts" target="loop_llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="Raw Claim Text" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;" edge="1" parent="1" source="loop_llm" target="loop_sanitize">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="Cleaned Claim &amp; Clause" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f59e0b;strokeWidth=2;fontColor=#fbbf24;fontSize=11;" edge="1" parent="1" source="loop_sanitize" target="loop_cnf">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1425" y="570" />
+              <mxPoint x="570" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" value="Resolution Result (Empty Clause Check)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f59e0b;strokeWidth=2;fontColor=#fbbf24;fontSize=11;" edge="1" parent="1" source="loop_cnf" target="loop_state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="Updated Debate State" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;" edge="1" parent="1" source="loop_state" target="loop_ui_render">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1040" y="735" />
+              <mxPoint x="805" y="735" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Phase 2 Loop back or Complete -->
+        <mxCell id="e13" value="Next Turn Loop" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#34d399;fontSize=11;dashed=1;" edge="1" parent="1" source="loop_ui_render" target="loop_speaker">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="190" y="805" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" value="Max Turns Reached / Verdict Click" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#a855f7;strokeWidth=2;fontColor=#c084fc;fontSize=11;" edge="1" parent="1" source="loop_ui_render" target="verdict_trigger">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1250" y="890" />
+              <mxPoint x="195" y="890" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Phase 3 Edges -->
+        <mxCell id="e15" value="Evaluates Scores" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#a855f7;strokeWidth=2;fontColor=#c084fc;fontSize=11;" edge="1" parent="1" source="verdict_trigger" target="verdict_synth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" value="Calls Proposer Debrief" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#a855f7;strokeWidth=2;fontColor=#c084fc;fontSize=11;" edge="1" parent="1" source="verdict_synth" target="verdict_debrief">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" value="Renders Modal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#a855f7;strokeWidth=2;fontColor=#c084fc;fontSize=11;" edge="1" parent="1" source="verdict_debrief" target="verdict_modal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
