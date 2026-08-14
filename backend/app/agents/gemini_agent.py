@@ -137,9 +137,10 @@ class GeminiAgent(BaseAgent):
         model_name: str = GEMINI_MODEL,
     ) -> dict[str, Any]:
         """Execute turn using google.generativeai SDK with tool calling."""
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=self.api_key)
+        client = genai.Client(api_key=self.api_key)
         sys_instruction = (
             f"You are Agent A ({self.role}) in a logic-verified debate arena on the topic: '{topic}'. "
             "State your argument directly, naturally, and persuasively as a skilled debater. "
@@ -153,19 +154,21 @@ class GeminiAgent(BaseAgent):
             "Always follow tool outputs strictly."
         )
 
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            tools=_prepare_gemini_tools(TOOL_SCHEMAS),
-            system_instruction=sys_instruction,
-        )
-
-        chat = model.start_chat(enable_automatic_function_calling=False)
         prompt = (
             f"Turn {turn_number}. Topic: '{topic}'. "
             f"Opponent last claim: '{opponent_last_claim or 'None (Opening turn)'}'."
         )
 
-        response = chat.send_message(prompt)
+        config = types.GenerateContentConfig(
+            system_instruction=sys_instruction,
+            tools=_prepare_gemini_tools(TOOL_SCHEMAS),
+        )
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=config,
+        )
         mcts_trace = None
         contradiction_result = {"found": False, "conflicting_clauses": [], "proof_steps": []}
         generated_claim = None

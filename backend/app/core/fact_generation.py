@@ -188,19 +188,23 @@ def generate_fact_base(
         ValueError: if the LLM response cannot be parsed as JSON.
         Exception:  if the Gemini API call fails (caller should handle retry).
     """
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 
-    genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        system_instruction=FACT_GENERATION_SYSTEM_PROMPT,
+    client = genai.Client(api_key=gemini_api_key)
+    prompt = build_fact_generation_prompt(topic, n_facts=n_facts)
+    config = types.GenerateContentConfig(
+        system_instruction=FACT_GENERATION_SYSTEM_PROMPT
     )
 
-    prompt = build_fact_generation_prompt(topic, n_facts=n_facts)
     response = None
     for attempt in range(3):
         try:
-            response = model.generate_content(prompt)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
             break
         except Exception as e:
             err_str = str(e)

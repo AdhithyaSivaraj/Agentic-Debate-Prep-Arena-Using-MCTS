@@ -388,13 +388,15 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
 
     if GEMINI_API_KEY:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=GEMINI_API_KEY)
+            from google import genai
+            client = genai.Client(api_key=GEMINI_API_KEY)
             for m in GEMINI_MODEL_FALLBACKS:
                 try:
-                    model = genai.GenerativeModel(m)
-                    response = model.generate_content(prompt)
-                    text = response.text.strip()
+                    response = client.models.generate_content(
+                        model=m,
+                        contents=prompt,
+                    )
+                    text = (response.text or "").strip()
                     if text:
                         return clean_claim_text(text)
                 except Exception:
@@ -506,11 +508,14 @@ def _generate_proposer_summary_debrief(
                            
     if GEMINI_API_KEY:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel(GEMINI_MODEL_FALLBACKS[0])
-            res = model.generate_content(prompt)
-            parsed = _parse_summary_json(res.text)
+            from google import genai
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            res = client.models.generate_content(
+                model=GEMINI_MODEL_FALLBACKS[0],
+                contents=prompt,
+            )
+            raw = (res.text or "").strip()
+            parsed = _parse_summary_json(raw)
             if parsed and "proposer_cornered_analysis" in parsed:
                 return parsed
         except Exception as e:
