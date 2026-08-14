@@ -317,7 +317,8 @@ def next_turn(req: NextTurnRequest) -> Turn:
         print(f"\n🏆 DEBATE COMPLETE! Summary generated for topic: '{session['topic']}'\n", flush=True)
 
                                                    
-    speaker_name = "Agent A (Gemini)" if is_agent_a else "Agent B (Nemotron)"
+    agent_model = session.get("proposer_model", "Groq Llama 3.3 70B") if is_agent_a else session.get("opponent_model", "Groq Llama 3.3 70B")
+    speaker_name = f"Agent {'A' if is_agent_a else 'B'} ({agent_model})"
     print(f"\n--------------------------------------------------", flush=True)
     print(f" 📢 TURN #{turn_number}/{max_turns} | SPEAKER: {speaker_name}", flush=True)
     print(f" 🗣️  Claim: {claim_obj.text}", flush=True)

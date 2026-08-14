@@ -49,8 +49,7 @@ def startup_event():
     """Startup verification logging model configurations."""
     logger.info("==================================================")
     logger.info(" ⚔️ Starting Agentic Debate Arena Backend")
-    logger.info(f" 🤖 Agent A Brain: {GEMINI_MODEL} (Google Gemini)")
-    logger.info(f" 🤖 Agent B Brain: {GEMINI_MODEL} (Google Gemini)")
+    logger.info(" 🤖 Dynamic Model Orchestration: Groq LPU / NVIDIA NIM / Gemini")
     logger.info("==================================================")
 
 
