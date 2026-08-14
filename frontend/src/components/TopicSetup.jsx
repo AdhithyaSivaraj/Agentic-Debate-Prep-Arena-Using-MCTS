@@ -28,7 +28,7 @@ const MODEL_GROUPS = [
     name: 'Groq LPU (GROQ Key — ~300 tokens/s)',
     models: [
       { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Groq LPU — Ultra Fast 70B)' },
-      { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 70B (Groq LPU — Logic Reasoning)' },
+      { id: 'deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 32B (Groq LPU — Logic Reasoning)' },
       { id: 'qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B (Groq LPU — Complex Nuance)' },
       { id: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B (Groq LPU)' },
       { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Groq LPU)' },

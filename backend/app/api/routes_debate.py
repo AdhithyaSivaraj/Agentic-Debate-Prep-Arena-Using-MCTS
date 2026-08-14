@@ -310,13 +310,6 @@ def next_turn(req: NextTurnRequest) -> Turn:
 
     turns.append(turn_obj)
 
-                                                                        
-    if turn_number >= max_turns:
-        session["status"] = "complete"
-        session["summary"] = _synthesize_debate_summary(session)
-        print(f"\n🏆 DEBATE COMPLETE! Summary generated for topic: '{session['topic']}'\n", flush=True)
-
-                                                   
     agent_model = session.get("proposer_model", "Groq Llama 3.3 70B") if is_agent_a else session.get("opponent_model", "Groq Llama 3.3 70B")
     speaker_name = f"Agent {'A' if is_agent_a else 'B'} ({agent_model})"
     print(f"\n--------------------------------------------------", flush=True)
@@ -327,6 +320,12 @@ def next_turn(req: NextTurnRequest) -> Turn:
     if mcts_trace:
         print(f" 🌳 MCTS Chosen Rebuttal: {mcts_trace.chosen_rebuttal}", flush=True)
     print(f"--------------------------------------------------\n", flush=True)
+
+                                                                        
+    if turn_number >= max_turns:
+        session["status"] = "complete"
+        session["summary"] = _synthesize_debate_summary(session)
+        print(f"\n🏆 DEBATE COMPLETE! Summary generated for topic: '{session['topic']}'\n", flush=True)
 
     return turn_obj
 
@@ -471,7 +470,7 @@ def _generate_proposer_summary_debrief(
             logger.warning(f"Groq summary debrief failed ({e}).")
 
                                             
-    if ("/" in proposer_model or "llama" in proposer_model.lower() or "nemotron" in proposer_model.lower()) and NVIDIA_API_KEY:
+    if not is_groq_model(proposer_model) and ("/" in proposer_model or "nemotron" in proposer_model.lower()) and NVIDIA_API_KEY:
         try:
             from openai import OpenAI
             client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
