@@ -25,15 +25,17 @@ const DERIVE_LINES = [
 
 const MODEL_GROUPS = [
   {
-    name: 'Premier Open Models (Llama 3.3 70B & DeepSeek R1)',
+    name: 'Premier Open Models (OpenRouter — Default)',
     models: [
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Meta Llama 3.3 70B Instruct' },
-      { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B (Logic Reasoning)' },
-      { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1 (Full Reasoning Engine)' },
+      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Meta Llama 3.3 70B Instruct (Default Proposer)' },
+      { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B (Default Opponent)' },
+      { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1 (Full 671B Reasoning Engine)' },
+      { id: 'meta-llama/llama-3.1-405b-instruct', label: 'Meta Llama 3.1 405B Flagship' },
+      { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B Instruct' },
     ],
   },
   {
-    name: 'Groq LPU (Ultra-Fast ~300-1000 tokens/s)',
+    name: 'Groq LPU (Ultra-Fast Hardware — ~300-1000 tokens/s)',
     models: [
       { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Groq LPU — ~500 t/s)' },
       { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — ~1000 t/s)' },
@@ -41,11 +43,18 @@ const MODEL_GROUPS = [
     ],
   },
   {
-    name: 'Google Gemini (Gemini Key)',
+    name: 'Google Gemini (Multimodal & Fast Reasoning)',
     models: [
       { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
       { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
       { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+    ],
+  },
+  {
+    name: 'NVIDIA NIM (Enterprise GPU Microservices)',
+    models: [
+      { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', label: 'Nemotron Super 49B (NVIDIA NIM)' },
+      { id: 'meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (NVIDIA NIM)' },
     ],
   },
 ];

@@ -39,7 +39,7 @@ def is_openrouter_model(model_name: str) -> bool:
     if not model_name:
         return False
     m = model_name.lower()
-    return m.startswith("meta-llama/") or m.startswith("deepseek/") or "openrouter" in m
+    return m.startswith("meta-llama/") or m.startswith("deepseek/") or m.startswith("qwen/qwen-2.5") or "openrouter" in m
 
 
 def is_groq_model(model_name: str) -> bool:
