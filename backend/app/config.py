@@ -40,6 +40,12 @@ NVIDIA_MODEL_FALLBACKS: list[str] = [
     "meta/llama-3.1-70b-instruct",
 ]
 
+OPENROUTER_MODEL_FALLBACKS: list[str] = [
+    "meta-llama/llama-3.3-70b-instruct",
+    "deepseek/deepseek-r1-distill-llama-70b",
+    "deepseek/deepseek-r1",
+]
+
 GROQ_MODEL_FALLBACKS: list[str] = [
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",

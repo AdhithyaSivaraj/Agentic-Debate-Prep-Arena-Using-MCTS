@@ -19,8 +19,22 @@ import numpy as np
 
 from agents.gemini_agent import GeminiAgent
 from agents.nemotron_agent import NemotronAgent
-from agents.nvidia_agent import NvidiaAgent, is_groq_model
-from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_FALLBACKS, OPENROUTER_API_KEY, NVIDIA_API_KEY, NVIDIA_BASE_URL, GROQ_API_KEY, GROQ_BASE_URL, MCTS_N_SIMULATIONS, FACT_BASE_SIZE
+from agents.nvidia_agent import NvidiaAgent, is_groq_model, is_openrouter_model
+from config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    GEMINI_MODEL_FALLBACKS,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_MODEL_FALLBACKS,
+    NVIDIA_API_KEY,
+    NVIDIA_BASE_URL,
+    GROQ_API_KEY,
+    GROQ_BASE_URL,
+    GROQ_MODEL_FALLBACKS,
+    MCTS_N_SIMULATIONS,
+    FACT_BASE_SIZE,
+)
 from core.fact_generation import (
     FactRecord,
     extract_fact_texts,
@@ -348,6 +362,25 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
         f"Output only the counter-argument text, nothing else."
     )
 
+    if OPENROUTER_API_KEY and (model_hint and is_openrouter_model(model_hint)):
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+            res = client.chat.completions.create(
+                model=model_hint,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=12.0,
+            )
+            msg = res.choices[0].message
+            text = (msg.content or (msg.reasoning if hasattr(msg, "reasoning") else "") or "").strip()
+            if "</think>" in text:
+                text = text.split("</think>")[-1].strip()
+            if text:
+                return clean_claim_text(text)
+        except Exception as e:
+            logger.warning(f"OpenRouter counter reply failed ({e}).")
+
     if GROQ_API_KEY:
         try:
             from openai import OpenAI
@@ -452,6 +485,26 @@ def _generate_proposer_summary_debrief(
     )
 
                                         
+    if OPENROUTER_API_KEY and is_openrouter_model(proposer_model):
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+            res = client.chat.completions.create(
+                model=proposer_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                timeout=18.0,
+            )
+            msg = res.choices[0].message
+            raw = (msg.content or (msg.reasoning if hasattr(msg, "reasoning") else "") or "").strip()
+            if "</think>" in raw:
+                raw = raw.split("</think>")[-1].strip()
+            parsed = _parse_summary_json(raw)
+            if parsed and "proposer_cornered_analysis" in parsed:
+                return parsed
+        except Exception as e:
+            logger.warning(f"OpenRouter summary debrief failed ({e}).")
+
     if is_groq_model(proposer_model) and GROQ_API_KEY:
         try:
             from openai import OpenAI

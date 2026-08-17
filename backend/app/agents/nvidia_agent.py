@@ -20,6 +20,9 @@ from config import (
     GROQ_API_KEY,
     GROQ_BASE_URL,
     GROQ_MODEL_FALLBACKS,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_MODEL_FALLBACKS,
 )
 from core.topic_knowledge import (
     get_topic_proposer_points,
@@ -32,16 +35,25 @@ from tools.tool_executor import ExecutorContext, execute_tool, parse_proposition
 logger = logging.getLogger(__name__)
 
 
+def is_openrouter_model(model_name: str) -> bool:
+    if not model_name:
+        return False
+    m = model_name.lower()
+    return m.startswith("meta-llama/") or m.startswith("deepseek/") or "openrouter" in m
+
+
 def is_groq_model(model_name: str) -> bool:
     if not model_name:
         return False
     m = model_name.lower()
-    return any(k in m for k in ["gpt-oss", "qwen3.6", "groq", "versatile", "instant", "deepseek", "qwen", "llama"])
+    if is_openrouter_model(model_name):
+        return False
+    return any(k in m for k in ["gpt-oss", "qwen3.6", "groq", "versatile", "instant"])
 
 
 class NvidiaAgent(BaseAgent):
     """
-    Agent powered by NVIDIA NIM or Groq LPU models (OpenAI-compatible chat completions format).
+    Agent powered by OpenRouter, Groq LPU, or NVIDIA NIM models (OpenAI-compatible chat completions format).
     """
 
     CURRENT_MODEL_INDEX: int = 0                                                
@@ -54,8 +66,11 @@ class NvidiaAgent(BaseAgent):
         api_key: str | None = None,
     ):
         super().__init__(agent_id=agent_id, role=role)
-        self.model_name = model_name or (GROQ_MODEL_FALLBACKS[0] if GROQ_API_KEY else NVIDIA_MODEL_FALLBACKS[0])
-        if is_groq_model(self.model_name):
+        self.model_name = model_name or (OPENROUTER_MODEL_FALLBACKS[0] if OPENROUTER_API_KEY else GROQ_MODEL_FALLBACKS[0])
+        if is_openrouter_model(self.model_name):
+            self.base_url = OPENROUTER_BASE_URL
+            self.api_key = api_key or OPENROUTER_API_KEY
+        elif is_groq_model(self.model_name):
             self.base_url = GROQ_BASE_URL
             self.api_key = api_key or GROQ_API_KEY
         else:
@@ -90,7 +105,9 @@ class NvidiaAgent(BaseAgent):
         Tries primary model, then fallbacks if rate-limited, and falls back to pure local logic if all API attempts fail.
         """
         import time
-        if is_groq_model(self.model_name):
+        if is_openrouter_model(self.model_name):
+            models_to_try = [self.model_name] + [m for m in OPENROUTER_MODEL_FALLBACKS if m != self.model_name]
+        elif is_groq_model(self.model_name):
             models_to_try = [self.model_name] + [m for m in GROQ_MODEL_FALLBACKS if m != self.model_name]
         else:
             models_to_try = [self.model_name] + [m for m in NVIDIA_MODEL_FALLBACKS if m != self.model_name]
@@ -134,7 +151,10 @@ class NvidiaAgent(BaseAgent):
         """
         from openai import OpenAI
 
-        if is_groq_model(model_name):
+        if is_openrouter_model(model_name):
+            target_url = OPENROUTER_BASE_URL
+            target_key = OPENROUTER_API_KEY or self.api_key
+        elif is_groq_model(model_name):
             target_url = GROQ_BASE_URL
             target_key = GROQ_API_KEY or self.api_key
         else:
@@ -197,7 +217,12 @@ class NvidiaAgent(BaseAgent):
             timeout=12.0,
         )
 
-        raw_content = response.choices[0].message.content or ""
+        msg = response.choices[0].message
+        raw_content = msg.content or ""
+        if not raw_content and hasattr(msg, "reasoning") and msg.reasoning:
+            raw_content = msg.reasoning
+        if "</think>" in raw_content:
+            raw_content = raw_content.split("</think>")[-1].strip()
         claim_text = chosen_claim
         clean_topic = "".join(w.capitalize() for w in topic.split() if w.isalnum())[:15] or "Topic"
         prefix = "" if self.role == "proposer" else "¬"

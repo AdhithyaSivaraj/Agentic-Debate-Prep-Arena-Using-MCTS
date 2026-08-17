@@ -25,11 +25,19 @@ const DERIVE_LINES = [
 
 const MODEL_GROUPS = [
   {
-    name: 'Groq LPU (GROQ Key — ~300-1000 tokens/s)',
+    name: 'Premier Open Models (Llama 3.3 70B & DeepSeek R1)',
     models: [
-      { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Groq LPU — Flagship 120B ~500 t/s)' },
-      { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — Ultra-Fast ~1000 t/s)' },
-      { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Groq LPU — Logic Reasoning)' },
+      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Meta Llama 3.3 70B Instruct' },
+      { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B (Logic Reasoning)' },
+      { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1 (Full Reasoning Engine)' },
+    ],
+  },
+  {
+    name: 'Groq LPU (Ultra-Fast ~300-1000 tokens/s)',
+    models: [
+      { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Groq LPU — ~500 t/s)' },
+      { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — ~1000 t/s)' },
+      { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Groq LPU)' },
     ],
   },
   {
@@ -40,13 +48,6 @@ const MODEL_GROUPS = [
       { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
     ],
   },
-  {
-    name: 'NVIDIA NIM (NVIDIA Key)',
-    models: [
-      { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', label: 'Nemotron Super 49B (NVIDIA)' },
-      { id: 'meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (NVIDIA)' },
-    ],
-  },
 ];
 
 let docketCounter = Math.floor(Math.random() * 8900) + 100;
@@ -55,8 +56,8 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   const [topic, setTopic] = useState('');
   const [userInteracted, setUserInteracted] = useState(false);
   const [maxTurns, setMaxTurns] = useState(20);
-  const [proposerModel, setProposerModel] = useState('openai/gpt-oss-120b');
-  const [opponentModel, setOpponentModel] = useState('openai/gpt-oss-120b');
+  const [proposerModel, setProposerModel] = useState('meta-llama/llama-3.3-70b-instruct');
+  const [opponentModel, setOpponentModel] = useState('deepseek/deepseek-r1-distill-llama-70b');
   const [deriveLines, setDeriveLines] = useState([]);
   const [titleVisible, setTitleVisible] = useState(false);
 
