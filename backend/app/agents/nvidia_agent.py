@@ -13,7 +13,14 @@ import logging
 from typing import Any
 
 from agents.base_agent import BaseAgent
-from config import NVIDIA_API_KEY, NVIDIA_BASE_URL, NVIDIA_MODEL_FALLBACKS, GROQ_API_KEY, GROQ_BASE_URL
+from config import (
+    NVIDIA_API_KEY,
+    NVIDIA_BASE_URL,
+    NVIDIA_MODEL_FALLBACKS,
+    GROQ_API_KEY,
+    GROQ_BASE_URL,
+    GROQ_MODEL_FALLBACKS,
+)
 from core.topic_knowledge import (
     get_topic_proposer_points,
     get_topic_opponent_points,
@@ -29,7 +36,7 @@ def is_groq_model(model_name: str) -> bool:
     if not model_name:
         return False
     m = model_name.lower()
-    return any(k in m for k in ["versatile", "instant", "deepseek", "qwen", "groq", "llama-3.3-70b", "llama-3.1-70b", "llama-3.1-8b"])
+    return any(k in m for k in ["gpt-oss", "qwen3.6", "groq", "versatile", "instant", "deepseek", "qwen", "llama"])
 
 
 class NvidiaAgent(BaseAgent):
@@ -47,7 +54,7 @@ class NvidiaAgent(BaseAgent):
         api_key: str | None = None,
     ):
         super().__init__(agent_id=agent_id, role=role)
-        self.model_name = model_name or NVIDIA_MODEL_FALLBACKS[0]
+        self.model_name = model_name or (GROQ_MODEL_FALLBACKS[0] if GROQ_API_KEY else NVIDIA_MODEL_FALLBACKS[0])
         if is_groq_model(self.model_name):
             self.base_url = GROQ_BASE_URL
             self.api_key = api_key or GROQ_API_KEY
@@ -71,7 +78,7 @@ class NvidiaAgent(BaseAgent):
         """Stub implementation for BaseAgent abstract method."""
         return action.get("claim_text", "")
 
-    def run_turn(
+    def execute_turn(
         self,
         topic: str,
         opponent_last_claim: str | None,
@@ -84,8 +91,7 @@ class NvidiaAgent(BaseAgent):
         """
         import time
         if is_groq_model(self.model_name):
-            groq_fallbacks = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"]
-            models_to_try = [self.model_name] + [m for m in groq_fallbacks if m != self.model_name]
+            models_to_try = [self.model_name] + [m for m in GROQ_MODEL_FALLBACKS if m != self.model_name]
         else:
             models_to_try = [self.model_name] + [m for m in NVIDIA_MODEL_FALLBACKS if m != self.model_name]
 

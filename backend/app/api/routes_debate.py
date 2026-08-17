@@ -352,7 +352,7 @@ def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: 
         try:
             from openai import OpenAI
             client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
-            model_name = "llama-3.3-70b-versatile"
+            model_name = GROQ_MODEL_FALLBACKS[0]
             if model_hint and is_groq_model(model_hint):
                 model_name = model_hint
             res = client.chat.completions.create(
@@ -493,7 +493,7 @@ def _generate_proposer_summary_debrief(
             from openai import OpenAI
             client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
             res = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=GROQ_MODEL_FALLBACKS[0],
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.6,
                 timeout=10.0,

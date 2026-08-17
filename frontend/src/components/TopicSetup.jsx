@@ -25,21 +25,11 @@ const DERIVE_LINES = [
 
 const MODEL_GROUPS = [
   {
-    name: 'Groq LPU (GROQ Key — ~300 tokens/s)',
+    name: 'Groq LPU (GROQ Key — ~300-1000 tokens/s)',
     models: [
-      { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Groq LPU — Ultra Fast 70B)' },
-      { id: 'deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 32B (Groq LPU — Logic Reasoning)' },
-      { id: 'qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B (Groq LPU — Complex Nuance)' },
-      { id: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B (Groq LPU)' },
-      { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Groq LPU)' },
-    ],
-  },
-  {
-    name: 'NVIDIA NIM (NVIDIA Key)',
-    models: [
-      { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', label: 'Nemotron Super 49B (NVIDIA)' },
-      { id: 'meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (NVIDIA)' },
-      { id: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B (NVIDIA Queue)' },
+      { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Groq LPU — Flagship 120B ~500 t/s)' },
+      { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — Ultra-Fast ~1000 t/s)' },
+      { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Groq LPU — Logic Reasoning)' },
     ],
   },
   {
@@ -50,6 +40,13 @@ const MODEL_GROUPS = [
       { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
     ],
   },
+  {
+    name: 'NVIDIA NIM (NVIDIA Key)',
+    models: [
+      { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', label: 'Nemotron Super 49B (NVIDIA)' },
+      { id: 'meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (NVIDIA)' },
+    ],
+  },
 ];
 
 let docketCounter = Math.floor(Math.random() * 8900) + 100;
@@ -58,8 +55,8 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   const [topic, setTopic] = useState('');
   const [userInteracted, setUserInteracted] = useState(false);
   const [maxTurns, setMaxTurns] = useState(20);
-  const [proposerModel, setProposerModel] = useState('llama-3.3-70b-versatile');
-  const [opponentModel, setOpponentModel] = useState('llama-3.3-70b-versatile');
+  const [proposerModel, setProposerModel] = useState('openai/gpt-oss-120b');
+  const [opponentModel, setOpponentModel] = useState('openai/gpt-oss-120b');
   const [deriveLines, setDeriveLines] = useState([]);
   const [titleVisible, setTitleVisible] = useState(false);
 

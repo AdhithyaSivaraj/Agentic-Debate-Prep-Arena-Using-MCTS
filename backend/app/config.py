@@ -41,9 +41,9 @@ NVIDIA_MODEL_FALLBACKS: list[str] = [
 ]
 
 GROQ_MODEL_FALLBACKS: list[str] = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
-    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
 ]
 
 NEMOTRON_EMBED_MODEL: str = "nvidia/nemo-embed-qa-e5-v5"                                                
