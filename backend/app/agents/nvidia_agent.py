@@ -32,7 +32,7 @@ from core.topic_knowledge import (
 )
 from tools.tool_executor import ExecutorContext, execute_tool, parse_propositional_form
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("agent")
 
 
 def is_openrouter_model(model_name: str) -> bool:
