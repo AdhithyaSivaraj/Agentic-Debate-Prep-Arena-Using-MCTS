@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import ArgumentGraph from './ArgumentGraph';
 import TopicSetup from './TopicSetup';
 import DebateSummaryModal from './DebateSummaryModal';
+import DebateSummarizingOverlay from './DebateSummarizingOverlay';
+import DebateInitializingOverlay from './DebateInitializingOverlay';
 import StatusRing from './StatusRing';
 import { startDebate, nextTurn, getTranscript, getDebateSummary } from '../lib/api';
 
@@ -322,6 +324,13 @@ export default function DebateArena() {
   const [session,           setSession]           = useState(null);
   const [isLoading,         setIsLoading]         = useState(false);
   const [isNextTurnLoading, setIsNextTurnLoading] = useState(false);
+  const [isSummarizing,     setIsSummarizing]     = useState(false);
+  const [summarizeCountdown, setSummarizeCountdown] = useState(0);
+  const [isInitializing,    setIsInitializing]    = useState(false);
+  const [initTopic,         setInitTopic]         = useState('');
+  const [initProposerModel, setInitProposerModel] = useState('');
+  const [initOpponentModel, setInitOpponentModel] = useState('');
+  const [initMaxTurns,      setInitMaxTurns]      = useState(20);
   const [autoPlay,          setAutoPlay]          = useState(false);
   const [autoScroll,        setAutoScroll]        = useState(true);
   const [activeSummary,     setActiveSummary]     = useState(null);
@@ -340,17 +349,34 @@ export default function DebateArena() {
     }
   }, [session?.turns?.length, autoScroll]);
 
-  
+  // Countdown effect to allow user to comfortably read opposer's last point before loading screen
+  useEffect(() => {
+    if (summarizeCountdown <= 0) return;
+    const t = setTimeout(() => {
+      if (summarizeCountdown === 1) {
+        setSummarizeCountdown(0);
+        handleFetchSummary();
+      } else {
+        setSummarizeCountdown(prev => prev - 1);
+      }
+    }, 1000);
+
+    return () => clearTimeout(t);
+  }, [summarizeCountdown]);
+
+  // Auto-play timer effect
   useEffect(() => {
     autoPlayRef.current = autoPlay;
     let timer;
 
-    if (autoPlay && session && !isNextTurnLoading && !activeSummary) {
+    if (autoPlay && session && !isNextTurnLoading && !activeSummary && !isSummarizing) {
       const maxTurns = session.max_turns || 20;
       if ((session.turns || []).length >= maxTurns || session.status === 'complete') {
         autoPlayRef.current = false;
         setAutoPlay(false);
-        handleFetchSummary();
+        timer = setTimeout(() => {
+          handleFetchSummary();
+        }, 1200);
       } else {
         timer = setTimeout(() => {
           if (autoPlayRef.current) {
@@ -363,7 +389,7 @@ export default function DebateArena() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [autoPlay, session, isNextTurnLoading, activeSummary]);
+  }, [autoPlay, session, isNextTurnLoading, activeSummary, isSummarizing]);
 
   const toggleAutoPlay = () => {
     setAutoPlay(prev => {
@@ -374,21 +400,30 @@ export default function DebateArena() {
   };
 
   const handleStartDebate = async (topic, maxTurns = 20, proposerModel, opponentModel) => {
+    setInitTopic(topic);
+    setInitMaxTurns(maxTurns);
+    setInitProposerModel(proposerModel);
+    setInitOpponentModel(opponentModel);
+    setIsInitializing(true);
     setIsLoading(true);
     try {
       const res      = await startDebate(topic, maxTurns, proposerModel, opponentModel);
       const sessData = await getTranscript(res.debate_id);
       setSession(sessData);
-      setShowSetup(false);
+      setTimeout(() => {
+        setIsInitializing(false);
+        setShowSetup(false);
+      }, 700);
     } catch (err) {
       alert(`Failed to start debate: ${err.message}`);
+      setIsInitializing(false);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleNextTurn = async () => {
-    if (!session || isNextTurnLoading || activeSummary || session.status === 'complete') return;
+    if (!session || isNextTurnLoading || isSummarizing || activeSummary || session.status === 'complete') return;
     const maxTurns = session.max_turns || 20;
     if ((session.turns || []).length >= maxTurns) {
       autoPlayRef.current = false;
@@ -402,17 +437,17 @@ export default function DebateArena() {
       await nextTurn(session.debate_id);
       const updated = await getTranscript(session.debate_id);
 
-      
-      if (!autoPlayRef.current) {
-        setSession(updated);
-        return;
-      }
-
+      // ALWAYS update session state first so the newly arrived turn (e.g. Agent B on turn 6) renders immediately on screen!
       setSession(updated);
-      if ((updated.turns || []).length >= maxTurns || updated.status === 'complete') {
+
+      const newTurnsCount = (updated.turns || []).length;
+      const isFinished = newTurnsCount >= maxTurns || updated.status === 'complete';
+
+      if (isFinished) {
         autoPlayRef.current = false;
         setAutoPlay(false);
-        handleFetchSummary(updated.debate_id);
+        // Start 4-second countdown so user can comfortably read opposer's closing argument
+        setSummarizeCountdown(4);
       }
     } catch (err) {
       alert(`Failed to advance turn: ${err.message}`);
@@ -424,17 +459,22 @@ export default function DebateArena() {
   };
 
   const handleFetchSummary = async (debateId) => {
+    setSummarizeCountdown(0);
     autoPlayRef.current = false;
     setAutoPlay(false);
     const dId = debateId || session?.debate_id;
     if (!dId) return;
+
+    setIsSummarizing(true);
     try {
       const data = await getDebateSummary(dId);
+      setIsSummarizing(false);
       setActiveSummary(data);
-      
+
       const updatedSess = await getTranscript(dId);
       setSession(updatedSess);
     } catch (err) {
+      setIsSummarizing(false);
       alert(`Failed to load summary: ${err.message}`);
     }
   };
@@ -442,13 +482,28 @@ export default function DebateArena() {
   const handleReset = () => {
     autoPlayRef.current = false;
     setAutoPlay(false);
+    setSummarizeCountdown(0);
+    setIsInitializing(false);
+    setIsSummarizing(false);
     setSession(null);
     setActiveSummary(null);
     setShowSetup(true);
   };
 
   if (showSetup) {
-    return <TopicSetup onStartDebate={handleStartDebate} isLoading={isLoading} />;
+    return (
+      <div className="anim-page-enter">
+        <TopicSetup onStartDebate={handleStartDebate} isLoading={isLoading} />
+        {isInitializing && (
+          <DebateInitializingOverlay
+            topic={initTopic}
+            maxTurns={initMaxTurns}
+            proposerModel={initProposerModel}
+            opponentModel={initOpponentModel}
+          />
+        )}
+      </div>
+    );
   }
 
   const turns      = session?.turns || [];
@@ -501,7 +556,9 @@ export default function DebateArena() {
                 disabled={isNextTurnLoading || isComplete}
                 style={{ padding: '9px 24px', fontSize: 13.5, fontWeight: 600 }}
               >
-                {isNextTurnLoading ? 'Reasoning…' : 'Next Turn →'}
+                {isNextTurnLoading
+                  ? (turns.length + 1 >= maxTurns ? 'Reasoning Final Turn…' : 'Reasoning…')
+                  : 'Next Turn →'}
               </button>
 
               <button
@@ -528,14 +585,22 @@ export default function DebateArena() {
             <div style={{ width: 1, height: 24, backgroundColor: 'var(--border)' }} />
 
             
+            {/* Action buttons */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <button
                 id="verdict-btn"
-                className="btn-outline"
-                onClick={() => handleFetchSummary()}
+                className={`btn-outline ${isComplete ? 'active' : ''}`}
+                onClick={() => {
+                  if (session?.summary) {
+                    setActiveSummary(session.summary);
+                  } else {
+                    handleFetchSummary();
+                  }
+                }}
+                disabled={isSummarizing}
                 style={{ padding: '9px 20px', fontSize: 13.5 }}
               >
-                🏆 Verdict
+                {isSummarizing ? '⚖️ Summarizing…' : isComplete ? '🏆 View Verdict' : '🏆 Verdict'}
               </button>
 
               <button
@@ -602,11 +667,68 @@ export default function DebateArena() {
                 </React.Fragment>
               );
             })}
+
+            {/* Final Turn Transition Banner */}
+            {isComplete && !session?.summary && !isSummarizing && (
+              <div
+                style={{
+                  maxWidth: 680,
+                  margin: '40px auto 20px',
+                  padding: '22px 28px',
+                  backgroundColor: 'var(--bg-surface, #14181f)',
+                  border: '1px solid var(--border-strong, #333d4d)',
+                  borderRadius: 14,
+                  textAlign: 'center',
+                  boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+                  animation: 'dialogScaleIn 0.35s ease forwards',
+                  position: 'relative',
+                  zIndex: 10,
+                }}
+              >
+                <div style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11, color: 'var(--valid, #34d399)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                  🏁 Final Turn Concluded · Opposer Has Rested Their Case
+                </div>
+                <div style={{ fontFamily: 'var(--serif, serif)', fontSize: 18, color: 'var(--ink-primary, #f8fafc)', marginBottom: 14 }}>
+                  All {maxTurns} debate arguments have concluded.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      setSummarizeCountdown(0);
+                      handleFetchSummary();
+                    }}
+                    className="btn-action"
+                    style={{ padding: '10px 24px', fontSize: 13.5, fontWeight: 600 }}
+                  >
+                    <span>⚖️ Summarize Debate & View Verdict →</span>
+                  </button>
+                  {summarizeCountdown > 0 && (
+                    <span style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11.5, color: 'var(--ink-secondary, #94a3b8)' }}>
+                      Auto-summarizing in {summarizeCountdown}s…
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      
+      {/* Dedicated Summarizing Loading Page */}
+      {isSummarizing && !activeSummary && (
+        <DebateSummarizingOverlay
+          topic={session?.topic}
+          turnsCount={turns.length}
+          maxTurns={maxTurns}
+          proposerModel={propModelName}
+          opponentModel={oppModelName}
+          lastOpponentClaim={
+            turns.filter(t => t?.claim?.speaker === 'agent_b').pop()?.claim?.text || ''
+          }
+        />
+      )}
+
+      {/* Summary Modal */}
       {activeSummary && (
         <DebateSummaryModal summary={activeSummary} onClose={() => setActiveSummary(null)} />
       )}

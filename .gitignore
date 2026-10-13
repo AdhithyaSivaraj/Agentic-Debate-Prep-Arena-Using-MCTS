@@ -27,6 +27,7 @@ build/
 .DS_Store
 .vscode/
 .idea/
+.zed/
 *.swp
 *.swo
 
@@ -37,3 +38,9 @@ build/
 /argument_graph_redesign.html
 /issues.md
 /PROJECT_STATE.md
+PROJECT_COMPLETE_OVERVIEW.md
+
+# Architecture & Design Assets
+architecture_workflow.drawio
+md files/
+

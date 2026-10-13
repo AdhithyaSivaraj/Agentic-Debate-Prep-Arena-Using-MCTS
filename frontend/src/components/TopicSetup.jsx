@@ -25,21 +25,21 @@ const DERIVE_LINES = [
 
 const MODEL_GROUPS = [
   {
-    name: 'Premier Open Models (OpenRouter — Default)',
+    name: 'Groq LPU (Ultra-Fast Hardware — ~300-1000 tokens/s)',
     models: [
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Meta Llama 3.3 70B Instruct (Default Proposer)' },
-      { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B (Default Opponent)' },
-      { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1 (Full 671B Reasoning Engine)' },
-      { id: 'meta-llama/llama-3.1-405b-instruct', label: 'Meta Llama 3.1 405B Flagship' },
-      { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B Instruct' },
+      { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Default Proposer — Groq LPU)' },
+      { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — ~1000 t/s)' },
+      { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Groq LPU)' },
     ],
   },
   {
-    name: 'Groq LPU (Ultra-Fast Hardware — ~300-1000 tokens/s)',
+    name: 'Premier Open Models (OpenRouter)',
     models: [
-      { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Groq LPU — ~500 t/s)' },
-      { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — ~1000 t/s)' },
-      { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Groq LPU)' },
+      { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B (Default Opponent)' },
+      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Meta Llama 3.3 70B Instruct' },
+      { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1 (Full 671B Reasoning Engine)' },
+      { id: 'meta-llama/llama-3.1-405b-instruct', label: 'Meta Llama 3.1 405B Flagship' },
+      { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B Instruct' },
     ],
   },
   {
@@ -65,7 +65,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   const [topic, setTopic] = useState('');
   const [userInteracted, setUserInteracted] = useState(false);
   const [maxTurns, setMaxTurns] = useState(20);
-  const [proposerModel, setProposerModel] = useState('meta-llama/llama-3.3-70b-instruct');
+  const [proposerModel, setProposerModel] = useState('openai/gpt-oss-120b');
   const [opponentModel, setOpponentModel] = useState('deepseek/deepseek-r1-distill-llama-70b');
   const [deriveLines, setDeriveLines] = useState([]);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -160,7 +160,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
+    <div className="anim-page-enter" style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
       
       <ArgumentGraph opacity={0.65} />
 

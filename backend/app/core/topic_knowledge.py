@@ -655,7 +655,7 @@ def _generate_dynamic_opponent_pool(topic: str) -> list[str]:
 
 def clean_claim_text(text: str) -> str:
     """
-    Strips out LLM introductory meta-text prefixes, conversational framing, and surrounding quotes.
+    Strips out LLM introductory meta-text prefixes, conversational framing, internal thinking/scratchpad blocks, and surrounding quotes.
     Ensures that only the direct, substantive counter or claim point is returned.
     """
     if not text:
@@ -663,7 +663,24 @@ def clean_claim_text(text: str) -> str:
 
     s = text.strip()
 
-                                               
+    # 1. Strip think / thought tags and internal reasoning scratchpads
+    if "<think>" in s.lower():
+        if "</think>" in s.lower():
+            s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL | re.IGNORECASE).strip()
+        else:
+            parts = re.split(r"<think>", s, flags=re.IGNORECASE)
+            s = parts[-1].strip() if len(parts) > 1 and parts[-1].strip() else parts[0].strip()
+
+    if "<thought>" in s.lower():
+        if "</thought>" in s.lower():
+            s = re.sub(r"<thought>.*?</thought>", "", s, flags=re.DOTALL | re.IGNORECASE).strip()
+        else:
+            parts = re.split(r"<thought>", s, flags=re.IGNORECASE)
+            s = parts[-1].strip() if len(parts) > 1 and parts[-1].strip() else parts[0].strip()
+
+    # Strip thinking process prefixes e.g. "Thinking Process: ..." or "Thought: ..."
+    s = re.sub(r"^(thinking process|thought|internal reasoning):.*?\n+", "", s, flags=re.IGNORECASE | re.DOTALL).strip()
+
     meta_patterns = [
         r"^(the|a)\s+(generated|proposed|final|selected)\s+(claim|response|answer|rebuttal|argument|point)\s+(is|says|states)?:?\s*",
         r"^here\s+is\s+the\s+(claim|response|rebuttal|argument|point):?\s*",
@@ -677,11 +694,9 @@ def clean_claim_text(text: str) -> str:
     for pat in meta_patterns:
         s = re.sub(pat, "", s, flags=re.IGNORECASE | re.MULTILINE).strip()
 
-                                         
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         s = s[1:-1].strip()
 
-                                                                       
     for pat in meta_patterns:
         s = re.sub(pat, "", s, flags=re.IGNORECASE | re.MULTILINE).strip()
 

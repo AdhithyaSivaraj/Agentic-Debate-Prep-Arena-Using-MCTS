@@ -93,7 +93,7 @@ class NvidiaAgent(BaseAgent):
         """Stub implementation for BaseAgent abstract method."""
         return action.get("claim_text", "")
 
-    def execute_turn(
+    def run_turn(
         self,
         topic: str,
         opponent_last_claim: str | None,
@@ -218,18 +218,27 @@ class NvidiaAgent(BaseAgent):
         )
 
         msg = response.choices[0].message
-        raw_content = msg.content or ""
-        if not raw_content and hasattr(msg, "reasoning") and msg.reasoning:
-            raw_content = msg.reasoning
-        if "</think>" in raw_content:
-            raw_content = raw_content.split("</think>")[-1].strip()
+        raw_content = (msg.content or "").strip()
+
+        # Strip think / thought tags if present in content
+        if "<think>" in raw_content.lower():
+            if "</think>" in raw_content.lower():
+                raw_content = raw_content.split("</think>")[-1].strip()
+            else:
+                raw_content = ""
+
+        if "<thought>" in raw_content.lower():
+            if "</thought>" in raw_content.lower():
+                raw_content = raw_content.split("</thought>")[-1].strip()
+            else:
+                raw_content = ""
+
         claim_text = chosen_claim
         clean_topic = "".join(w.capitalize() for w in topic.split() if w.isalnum())[:15] or "Topic"
         prefix = "" if self.role == "proposer" else "¬"
         prop_form = f"{prefix}{clean_topic}ProT{turn_number}"
 
         try:
-                                                   
             clean_json = raw_content.strip()
             if clean_json.startswith("```"):
                 clean_json = clean_json.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
@@ -242,8 +251,11 @@ class NvidiaAgent(BaseAgent):
             if parsed.get("propositional_form"):
                 prop_form = parsed["propositional_form"]
         except Exception:
-            if raw_content:
-                claim_text = raw_content[:280]
+            clean_candidate = clean_claim_text(raw_content)
+            # Only use clean_candidate if it is substantive and not an internal scratchpad
+            thinking_starters = ["let's", "i need to", "i should", "first,", "as an ai", "my reasoning", "thinking process"]
+            if clean_candidate and len(clean_candidate) >= 15 and not any(clean_candidate.lower().startswith(p) for p in thinking_starters):
+                claim_text = clean_candidate[:280]
 
         claim_text = clean_claim_text(claim_text)
 
@@ -342,3 +354,5 @@ class NvidiaAgent(BaseAgent):
             "mcts_trace": mcts_trace,
             "mode": "fallback",
         }
+
+    execute_turn = run_turn

@@ -117,19 +117,30 @@ def parse_fact_generation_response(raw_response: str) -> list[FactRecord]:
 
                                       
     cleaned = raw_response.strip()
+    if "</think>" in cleaned:
+        cleaned = cleaned.split("</think>")[-1].strip()
+
     if cleaned.startswith("```"):
-                                               
         cleaned = re.sub(r"^```[a-z]*\n?", "", cleaned, flags=re.IGNORECASE)
-                              
         cleaned = re.sub(r"\n?```$", "", cleaned)
+
+    # Extract JSON array bounds if model outputs surrounding text
+    start_idx = cleaned.find("[")
+    end_idx = cleaned.rfind("]")
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        cleaned = cleaned[start_idx : end_idx + 1]
 
     try:
         data = json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Fact generation response is not valid JSON: {e}\n"
-            f"Raw response (first 500 chars): {raw_response[:500]}"
-        )
+    except json.JSONDecodeError:
+        try:
+            fixed = re.sub(r",\s*([\]}])", r"\1", cleaned)
+            data = json.loads(fixed)
+        except Exception as e:
+            raise ValueError(
+                f"Fact generation response is not valid JSON: {e}\n"
+                f"Raw response (first 500 chars): {raw_response[:500]}"
+            )
 
     if not isinstance(data, list):
         raise ValueError(
@@ -254,8 +265,9 @@ def generate_fact_base_openai(
             {"role": "user", "content": prompt},
         ],
         temperature=0.6,
-        timeout=15.0,
+        timeout=35.0,
     )
 
-    content = response.choices[0].message.content or ""
+    msg = response.choices[0].message
+    content = msg.content or (msg.reasoning if hasattr(msg, "reasoning") else "") or ""
     return parse_fact_generation_response(content)

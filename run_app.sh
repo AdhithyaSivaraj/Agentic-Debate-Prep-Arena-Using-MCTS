@@ -32,14 +32,16 @@ fuser -k 8000/tcp 5173/tcp >/dev/null 2>&1
 # 1. Start Backend FastAPI Server
 echo "🚀 Starting FastAPI Backend on http://localhost:8000..."
 cd "$BACKEND_DIR"
-if [ -d "venv" ]; then
+if [ -d "$PROJECT_DIR/.venv" ]; then
+  source "$PROJECT_DIR/.venv/bin/activate"
+elif [ -d "venv" ]; then
   source venv/bin/activate
 fi
 
 export PYTHONPATH="$BACKEND_DIR/app:$BACKEND_DIR:$PYTHONPATH"
 
-# Use uvicorn --app-dir to set app directory as the import root
-python -m uvicorn main:app --app-dir "$BACKEND_DIR/app" --host 0.0.0.0 --port 8000 &
+# Use uvicorn --app-dir with --reload to automatically reload code changes
+python -m uvicorn main:app --app-dir "$BACKEND_DIR/app" --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 
 # Wait briefly for backend to initialize

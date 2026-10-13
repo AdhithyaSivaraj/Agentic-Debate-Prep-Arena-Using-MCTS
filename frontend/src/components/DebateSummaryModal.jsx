@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Trophy, X, Target, Award, BookOpen, Sparkles, CheckCircle, ShieldAlert } from 'lucide-react';
 
 export default function DebateSummaryModal({ summary, onClose }) {
@@ -8,22 +9,24 @@ export default function DebateSummaryModal({ summary, onClose }) {
 
   if (!summary) return null;
 
-  const isDraw   = summary.winner.includes('Draw');
-  const isAgentA = summary.winner.includes('Agent A');
+  const winnerStr = summary.winner || '';
+  const isDraw   = winnerStr.includes('Draw');
+  const isAgentA = winnerStr.includes('Agent A');
 
-  const corneringPoints = summary.cornering_points || [];
-  const proposerFull    = summary.proposer_full_arguments || summary.proposer_key_points || [];
-  const opponentFull    = summary.opponent_full_arguments || summary.opponent_key_points || [];
+  const corneringPoints = Array.isArray(summary.cornering_points) ? summary.cornering_points : [];
+  const proposerFull    = Array.isArray(summary.proposer_full_arguments) ? summary.proposer_full_arguments : (summary.proposer_key_points || []);
+  const opponentFull    = Array.isArray(summary.opponent_full_arguments) ? summary.opponent_full_arguments : (summary.opponent_key_points || []);
 
   const filteredCornering = corneringPoints.filter(cp => {
-    if (coachingFilter === 'agent_a') return cp.speaker.includes('Agent B');
-    if (coachingFilter === 'agent_b') return cp.speaker.includes('Agent A');
+    const spk = cp?.speaker || '';
+    if (coachingFilter === 'agent_a') return spk.includes('Agent B');
+    if (coachingFilter === 'agent_b') return spk.includes('Agent A');
     return true;
   });
 
   const allClaims = [
-    ...proposerFull.map((text, idx) => ({ text, speaker: 'agent_a', speakerName: 'Agent A (Proposer)', index: idx + 1 })),
-    ...opponentFull.map((text, idx) => ({ text, speaker: 'agent_b', speakerName: 'Agent B (Opponent)', index: idx + 1 }))
+    ...(Array.isArray(proposerFull) ? proposerFull : []).map((text, idx) => ({ text, speaker: 'agent_a', speakerName: 'Agent A (Proposer)', index: idx + 1 })),
+    ...(Array.isArray(opponentFull) ? opponentFull : []).map((text, idx) => ({ text, speaker: 'agent_b', speakerName: 'Agent B (Opponent)', index: idx + 1 }))
   ];
 
   const filteredClaims = allClaims.filter(c => {
@@ -32,8 +35,8 @@ export default function DebateSummaryModal({ summary, onClose }) {
     return true;
   });
 
-  return (
-    <div className="modal-overlay">
+  return createPortal(
+    <div className="modal-overlay" style={{ zIndex: 99999 }}>
       <div className="modal-dialog">
         
         
@@ -160,7 +163,8 @@ export default function DebateSummaryModal({ summary, onClose }) {
               </div>
 
               {filteredCornering.map((cp, idx) => {
-                const isSpokenByB = cp.speaker.includes('Agent B');
+                const spk = cp?.speaker || '';
+                const isSpokenByB = spk.includes('Agent B');
                 const defenderName = isSpokenByB ? 'Agent A (Proposer)' : 'Agent B (Opponent)';
                 return (
                   <div key={idx} className="arena-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -286,6 +290,7 @@ export default function DebateSummaryModal({ summary, onClose }) {
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
