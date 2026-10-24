@@ -118,6 +118,13 @@ pytest -v
 
 ---
 
+## 📄 Documents
+
+- [Project report (PDF)](Project_Report_Agentic_Debate_Arena_Updated.pdf) — design, modules, case study and testing
+- [Project presentation (PPTX)](Agentic_Debate_Arena.pptx)
+
+---
+
 ## 🛡️ License
 
 MIT License. Developed for advanced agentic AI research & debate logic verification.
