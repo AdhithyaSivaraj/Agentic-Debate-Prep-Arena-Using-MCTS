@@ -4,6 +4,8 @@ A neuro-symbolic debate system in which two AI agents argue opposite sides of a 
 
 Built for the Foundations of Artificial Intelligence course: knowledge-based agents (Unit I), informed search (Unit II), adversarial search (Unit III) and propositional logic (Unit IV).
 
+![Debate timeline: each side's position and the live score in the header, claims with their propositional forms, and a refutation linked to the turn it refutes](docs/screenshots/timeline.png)
+
 ## How it works
 
 **Set-up.** The topic is framed as a resolution with an explicit position for each side, so a question such as "Gaming laptop or business laptop?" becomes two opposing claims. An LLM then generates about twenty facts, each with a propositional form (`A`, `¬A`, `A → B`) and a side. Each fact is added to the knowledge base of the side it supports, provided that knowledge base stays consistent. The facts' atoms form the shared logical vocabulary of the debate; nothing is pre-scripted per topic.
@@ -38,6 +40,16 @@ graph TD
 - **LLM providers:** Groq (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`), OpenRouter (DeepSeek V3.2 and R1, Llama 3.3 70B, Qwen 2.5 72B), Google Gemini and NVIDIA NIM, each with model fallbacks. If generation fails mid-debate, candidates are drawn from the agent's own side of the fact base and the turn is marked as a fallback.
 - **Interface:** each side's position and a live score of proven refutations in the header; a timeline of claims with their propositional forms; proof cards linked to the turn they refute; an expandable MCTS trace for every turn; a verdict report; three themes (Brief, Ledger, Nocturne).
 - **Tests:** 223 unit and integration tests. LLM calls are replaced by a deterministic fake, so the suite runs offline.
+
+## Screenshots
+
+| Topic and model selection | Refutation with its resolution proof |
+|---|---|
+| ![Landing page](docs/screenshots/landing.png) | ![Refutation card](docs/screenshots/refutation.png) |
+| **MCTS trace for one turn** | **Verdict decided by the proofs** |
+| ![MCTS trace](docs/screenshots/mcts-trace.png) | ![Verdict report](docs/screenshots/verdict.png) |
+
+All screenshots are from a real ten-turn debate (GPT-OSS 120B against DeepSeek V3.2), the case study in the project report.
 
 ## Getting started
 
