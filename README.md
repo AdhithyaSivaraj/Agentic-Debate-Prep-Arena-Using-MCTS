@@ -49,8 +49,8 @@ graph TD
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/AdhithyaSivaraj/Agentic-Debtate-Prep-Arena-Using-MCTS.git
-   cd Agentic-Debtate-Prep-Arena-Using-MCTS
+   git clone https://github.com/AdhithyaSivaraj/Agentic-Debate-Prep-Arena-Using-MCTS.git
+   cd Agentic-Debate-Prep-Arena-Using-MCTS
    ```
 
 2. **Install dependencies:**
