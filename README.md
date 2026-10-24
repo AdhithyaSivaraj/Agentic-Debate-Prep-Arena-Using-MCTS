@@ -1,130 +1,116 @@
-# ⚔️ Agentic Debate Arena with MCTS & Neuro-Symbolic Logic Verification
+# Agentic Debate Arena
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.0+-646CFF.svg)](https://vitejs.dev/)
-[![Tests](https://img.shields.io/badge/tests-223%20passed-brightgreen.svg)](backend/tests/)
+A neuro-symbolic debate system in which two AI agents argue opposite sides of a topic. Language models propose the arguments; Monte Carlo Tree Search (MCTS) decides which argument is spoken, and propositional resolution proves every refutation and self-contradiction. The verdict comes from those proofs, not from a language model.
 
-An autonomous **Neuro-Symbolic Agentic Debate System** where two AI debater agents argue opposite sides of any topic. LLMs (**Groq LPU**, **OpenRouter**, **Google Gemini**, **NVIDIA NIM**) propose the arguments; **Monte Carlo Tree Search (MCTS)** decides which one is spoken, and **propositional resolution** proves every refutation and self-contradiction. The language model writes, the algorithms decide.
+Built for the Foundations of Artificial Intelligence course: knowledge-based agents (Unit I), informed search (Unit II), adversarial search (Unit III) and propositional logic (Unit IV).
 
----
+## How it works
 
-## 🌟 Key Features
+**Set-up.** The topic is framed as a resolution with an explicit position for each side, so a question such as "Gaming laptop or business laptop?" becomes two opposing claims. An LLM then generates about twenty facts, each with a propositional form (`A`, `¬A`, `A → B`) and a side. Each fact is added to the knowledge base of the side it supports, provided that knowledge base stays consistent. The facts' atoms form the shared logical vocabulary of the debate; nothing is pre-scripted per topic.
 
-- ⚖️ **Explicit Sides:** Any topic — including choices like *"Gaming laptop or business laptop?"* — is first framed into a resolution with a stated position for each agent, shown in the arena header and enforced in every prompt.
-- 📚 **Generated Fact Base:** At debate start an LLM generates ~20 facts about the topic, each with a propositional form (`A`, `¬A`, `A → B`) and a side. The facts seed each agent's knowledge base by side, and their atoms become the shared logical vocabulary of the debate. Nothing is pre-scripted per topic.
-- 🤖 **Plan, Then Argue:** Each turn the speaking agent reads the exchange so far, plans, and proposes ~4 candidates — rebuttals of the last claim or arguments on an issue not yet debated — each labelled with its issue and side and carrying a propositional form. Candidates that help the other side are discarded. The LLM never picks the move or judges a contradiction.
-- 🌳 **Monte Carlo Tree Search (MCTS):** UCB1 ($W_i / N_i + C \cdot \sqrt{\ln N_p / N_i}$) over the candidates, 32 simulations per turn, with resolution rollouts: a candidate scores for refuting something the opponent actually said and for opening a new issue, and loses for contradicting itself, repeating itself, re-arguing a worn-out point, or leaving an opening that a randomly sampled opponent reply could exploit.
-- ⚡ **Propositional Resolution Engine:** Robinson resolution refutation ($\frac{A \lor B, \neg A}{B}$) checks every claim against the speaker's own KB (self-contradiction) and the opponent's KB (refutation). The verdict is the net count of proven refutations minus self-contradictions.
-- 🔎 **Semantic Retrieval:** Cosine-similarity search over a hashed bag-of-words index of the fact base grounds each turn in the evidence most relevant to the opponent's last claim.
-- 🔌 **Multi-Provider LLMs:** Groq LPU (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`), OpenRouter (DeepSeek V3.2 / R1, Llama 3.3 70B, Qwen 2.5 72B), Google Gemini, and NVIDIA NIM, with per-provider model fallbacks. If the LLM fails mid-debate, candidates come from the agent's side of the generated fact base and the turn is visibly marked `fallback`.
-- 🎨 **Arena UI:** Three themes with their own typography — *Brief* (printed legal brief), *Ledger* (Swiss editorial) and *Nocturne* (dark) — switched with a circular reveal. A live scoreboard tracks proven refutations; each refutation links to and draws an arc to the turn it refutes; every turn's MCTS candidates and scores can be expanded.
+**Each turn:**
 
----
+1. Retrieve the facts most relevant to the opponent's last claim (cosine similarity over a hashed bag-of-words index).
+2. The speaking agent's LLM reads the exchange, plans, and proposes about four candidate arguments, each labelled with an issue and a side and carrying a propositional form. Candidates that would help the other side are discarded.
+3. MCTS with UCB1 (32 simulations) selects one candidate. Each simulation is a resolution rollout: a candidate scores for refuting something the opponent has said and for opening a new issue, and loses for contradicting the agent's own position, repeating itself, re-arguing an exhausted point, or being exposed by a sampled opponent reply.
+4. The chosen clause is told to both knowledge bases.
+5. Resolution checks the claim for self-contradiction and for refutation of the opponent. A refutation must contradict what the opponent actually said, directly or together with their evidence.
 
-## 🏗️ Architecture
+**Verdict.** The winner is the side with more proven refutations, net of self-contradictions. An LLM then writes a debrief and tactical coaching grounded in the transcript and the proofs.
 
 ```mermaid
 graph TD
-    User([User Topic Input]) --> Setup[Topic & Model Selection]
-    Setup --> StartDebate[POST /start-debate]
-    StartDebate --> FactGen[Fact Generation & Vector Indexing]
-    
-    subgraph Agentic Loop per Turn
-        FactGen --> TurnReq[POST /next-turn]
-        TurnReq --> Retrieval[1. Retrieve Relevant Facts]
-        Retrieval --> Propose[2. LLM Proposes Candidate Claims + Logical Forms]
-        Propose --> MCTS[3. MCTS with Resolution Rollouts Picks One]
-        MCTS --> Tell[4. TELL Claim into Both Knowledge Bases]
-        Tell --> Resolution[5. Resolution: Self-Contradiction & Refutation Checks]
+    Topic[Topic and model selection] --> Start[POST /start-debate]
+    Start --> Frame[Frame sides, generate fact base, seed knowledge bases]
+    Frame --> Turn[POST /next-turn]
+    subgraph Turn loop
+        Turn --> Retrieve[1. Retrieve evidence]
+        Retrieve --> Propose[2. LLM proposes candidates]
+        Propose --> MCTS[3. MCTS with resolution rollouts]
+        MCTS --> Tell[4. TELL both knowledge bases]
+        Tell --> Check[5. Resolution: refutation and self-contradiction]
     end
-    
-    Resolution --> UI[React Arena UI]
+    Check --> UI[React interface]
 ```
 
----
+## Features
 
-## 🚀 Quick Start (Single Command)
+- **LLM providers:** Groq (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`), OpenRouter (DeepSeek V3.2 and R1, Llama 3.3 70B, Qwen 2.5 72B), Google Gemini and NVIDIA NIM, each with model fallbacks. If generation fails mid-debate, candidates are drawn from the agent's own side of the fact base and the turn is marked as a fallback.
+- **Interface:** each side's position and a live score of proven refutations in the header; a timeline of claims with their propositional forms; proof cards linked to the turn they refute; an expandable MCTS trace for every turn; a verdict report; three themes (Brief, Ledger, Nocturne).
+- **Tests:** 223 unit and integration tests. LLM calls are replaced by a deterministic fake, so the suite runs offline.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/AdhithyaSivaraj/Agentic-Debate-Prep-Arena-Using-MCTS.git
-   cd Agentic-Debate-Prep-Arena-Using-MCTS
-   ```
+## Getting started
 
-2. **Install dependencies:**
-   ```bash
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r backend/requirements.txt
-   (cd frontend && npm install)
-   ```
+Requirements: Python 3.10+, Node.js 18+.
 
-3. **Configure API Keys:**
-   Create a `backend/.env` file. The default models need **Groq** (Proposer, fact base) and **OpenRouter** (Opponent); the others are optional:
-   ```env
-   GROQ_API_KEY=gsk_...
-   OPENROUTER_API_KEY=sk-or-...
-   GEMINI_API_KEY=...
-   NVIDIA_API_KEY=nvapi-...
-   ```
+```bash
+git clone https://github.com/AdhithyaSivaraj/Agentic-Debate-Prep-Arena-Using-MCTS.git
+cd Agentic-Debate-Prep-Arena-Using-MCTS
 
-4. **Launch Application:**
-   Run the unified launcher script:
-   ```bash
-   ./run_app.sh
-   ```
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+(cd frontend && npm install)
+```
 
-- **Frontend UI:** [http://localhost:5173](http://localhost:5173)
-- **Backend API:** [http://localhost:8000](http://localhost:8000)
-- **Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+Create `backend/.env`. The default models need Groq (Proposer and fact base) and OpenRouter (Opponent); the other keys are optional.
 
----
+```env
+GROQ_API_KEY=...
+OPENROUTER_API_KEY=...
+GEMINI_API_KEY=...
+NVIDIA_API_KEY=...
+```
 
-## 🧪 Running Tests
+Start the backend and frontend together:
 
-The backend test suite covers MCTS, resolution theorem proving, retrieval, the tool executor, and the API endpoints. LLM calls are replaced by a deterministic fake (`tests/conftest.py`), so the suite runs offline in about a second:
+```bash
+./run_app.sh
+```
+
+| Service | URL |
+|---|---|
+| Interface | http://localhost:5173 |
+| API | http://localhost:8000 |
+| API docs | http://localhost:8000/docs |
+
+## Running the tests
 
 ```bash
 source .venv/bin/activate
 cd backend
-pytest -v
+pytest
 ```
 
----
+## API
 
-## 📁 Repository Structure
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/start-debate` | Frame the topic, generate the fact base, return a debate ID |
+| POST | `/next-turn` | Play one turn and return the claim, proofs and MCTS trace |
+| GET | `/transcript/{debate_id}` | Full session state |
+| GET | `/mcts-trace/{debate_id}/{turn}` | MCTS candidates and scores for one turn |
+| GET | `/summary/{debate_id}` | Verdict, debrief and coaching |
+
+## Repository structure
 
 ```
-.
-├── backend/
-│   ├── app/
-│   │   ├── agents/          # DebaterAgent — the per-turn agentic loop
-│   │   ├── api/             # FastAPI route handlers (/start-debate, /next-turn, /summary)
-│   │   ├── core/            # MCTS, Resolution Engine, Retrieval & Knowledge Base
-│   │   ├── models/          # Pydantic schemas
-│   │   ├── tools/           # Tool executor dispatching to the core algorithms
-│   │   └── llm_client.py    # Provider routing, fallbacks, JSON parsing
-│   ├── tests/               # 223 unit & integration tests (offline, fake LLM)
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # DebateArena, TopicSetup, verdict modal, loading overlay, StatusRing
-│   │   ├── lib/             # API client, model list & theme switching
-│   │   └── styles/          # Brief / Ledger / Nocturne themes
-│   └── package.json
-└── run_app.sh               # Unified bash launcher for backend + frontend
+backend/
+  app/
+    agents/debater_agent.py   per-turn agent loop
+    api/routes_debate.py      FastAPI endpoints and verdict
+    core/                     fact generation, knowledge base, MCTS, resolution, retrieval
+    models/schemas.py         Pydantic models
+    tools/tool_executor.py    dispatch from the agent to the algorithms
+    llm_client.py             provider routing, fallbacks, JSON parsing
+  tests/                      offline test suite
+frontend/
+  src/components/             arena, setup page, verdict report
+  src/lib/                    API client, model list, themes
+  src/styles/theme.css        themes and layout
+run_app.sh                    starts backend and frontend
 ```
 
----
+## Documents
 
-## 📄 Documents
-
-- [Project report (PDF)](Project_Report_Agentic_Debate_Arena_Updated.pdf) — design, modules, case study and testing
+- [Project report (PDF)](Project_Report_Agentic_Debate_Arena_Updated.pdf)
 - [Project presentation (PPTX)](Agentic_Debate_Arena.pptx)
-
----
-
-## 🛡️ License
-
-MIT License. Developed for advanced agentic AI research & debate logic verification.
