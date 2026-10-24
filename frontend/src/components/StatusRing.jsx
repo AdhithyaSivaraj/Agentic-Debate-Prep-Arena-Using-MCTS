@@ -8,7 +8,6 @@ export const StatusRing = forwardRef(function StatusRing(
   const [pulse, setPulse] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
 
-  
   useImperativeHandle(ref, () => ({
     pulse: () => {
       setPulse(true);
@@ -16,7 +15,6 @@ export const StatusRing = forwardRef(function StatusRing(
     },
   }));
 
-  
   useEffect(() => {
     if (state === 'done') {
       setIsSettling(true);

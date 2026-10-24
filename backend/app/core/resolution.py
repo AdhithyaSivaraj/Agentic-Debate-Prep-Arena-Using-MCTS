@@ -37,12 +37,14 @@ Resolution refutation:
     This is complete for propositional logic (Robinson's completeness theorem).
 """
 from __future__ import annotations
+
+import re
 from typing import NamedTuple
 
 
 Literal = str | tuple[str, str]
 
-                                                 
+
 Clause = frozenset
 
 
@@ -68,8 +70,8 @@ def negate(literal: Literal) -> Literal:
         negate(("NOT", "P"))  →  "P"
     """
     if isinstance(literal, tuple) and literal[0] == "NOT":
-        return literal[1]                                       
-    return ("NOT", literal)                                      
+        return literal[1]
+    return ("NOT", literal)
 
 
 def literal_to_str(literal: Literal) -> str:
@@ -82,7 +84,7 @@ def literal_to_str(literal: Literal) -> str:
 def clause_to_str(clause: Clause) -> str:
     """Human-readable string for a clause — used in proof traces and UI."""
     if not clause:
-        return "⊥"                                 
+        return "⊥"
     return " ∨ ".join(sorted(literal_to_str(lit) for lit in clause))
 
 
@@ -109,7 +111,6 @@ def resolve(c1: Clause, c2: Clause) -> set[Clause]:
     for literal in c1:
         complement = negate(literal)
         if complement in c2:
-                                                                   
             resolvent = frozenset(
                 (c1 - frozenset({literal})) | (c2 - frozenset({complement}))
             )
@@ -148,20 +149,17 @@ def check_contradiction(kb: list[Clause]) -> ContradictionResult:
     For contradiction detection in a debate KB, no negated goal is needed — we just
     check whether the KB's own clauses are mutually consistent.
     """
-                                                                                      
-                                            
+
     clauses: list[Clause] = list(kb)
     clause_set: set[Clause] = set(kb)
 
     proof_steps: list[str] = []
     conflicting_pair: tuple[str, str] | None = None
 
-                                                                                  
     changed = True
     while changed:
         changed = False
-                                                                       
-                                                
+
         current_clauses = list(clauses)
         n = len(current_clauses)
 
@@ -177,7 +175,6 @@ def check_contradiction(kb: list[Clause]) -> ContradictionResult:
                         f"{{{clause_to_str(c2)}}}  →  {{{clause_to_str(resolvent)}}}"
                     )
 
-                                                
                     if len(resolvent) == 0:
                         proof_steps.append(step_str)
                         conflicting_pair = (
@@ -190,18 +187,15 @@ def check_contradiction(kb: list[Clause]) -> ContradictionResult:
                             proof_steps=proof_steps,
                         )
 
-                                                                
                     if is_tautology(resolvent):
                         continue
 
-                                                    
                     if resolvent not in clause_set:
                         proof_steps.append(step_str)
                         clause_set.add(resolvent)
                         clauses.append(resolvent)
                         changed = True
 
-                                                                
     return ContradictionResult(
         found=False,
         conflicting_clauses=[],
@@ -236,3 +230,61 @@ def neg_atom(name: str) -> Clause:
         neg_atom("P")  →  frozenset({("NOT", "P")})
     """
     return frozenset({("NOT", name)})
+
+
+_ATOM_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+def _parse_literal(text: str) -> Literal | None:
+    """Parse "A", "¬A", "~A" or "NOT A" into a literal; None if not a single valid atom."""
+    t = text.strip()
+    negated = False
+    while True:
+        if t.startswith(("¬", "~", "!")):
+            negated, t = not negated, t[1:].strip()
+        elif t.upper().startswith("NOT "):
+            negated, t = not negated, t[4:].strip()
+        else:
+            break
+    if not _ATOM_RE.match(t):
+        return None
+    return ("NOT", t) if negated else t
+
+
+def parse_propositional_form(prop_form: str) -> Clause | None:
+    """
+    Parse a propositional form string into a Clause (frozenset of literals).
+
+    Supported formats (each side may itself be negated):
+        "A → B" / "A -> B"   →  ¬A ∨ B
+        "A ∨ B" / "A | B"    →  A ∨ B
+        "A", "¬A", "NOT A"   →  unit clause
+
+    Returns None if the string cannot be parsed (atom names must be single tokens).
+    """
+    prop_form = (prop_form or "").strip()
+    if not prop_form:
+        return None
+
+    for sep in ("→", "->", "=>"):
+        if sep in prop_form:
+            antecedent, consequent = prop_form.split(sep, 1)
+            a, c = _parse_literal(antecedent), _parse_literal(consequent)
+            if a is None or c is None:
+                return None
+            return frozenset({negate(a), c})
+
+    for sep in ("∨", "|"):
+        if sep in prop_form:
+            literals = [_parse_literal(part) for part in prop_form.split(sep)]
+            if any(lit is None for lit in literals):
+                return None
+            return frozenset(literals)
+
+    literal = _parse_literal(prop_form)
+    return frozenset({literal}) if literal is not None else None
+
+
+def atoms_of(clause: Clause) -> set[str]:
+    """Return the atom names appearing in a clause, ignoring polarity."""
+    return {lit[1] if isinstance(lit, tuple) else lit for lit in clause}

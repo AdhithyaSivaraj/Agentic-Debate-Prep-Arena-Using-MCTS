@@ -458,3 +458,76 @@ class TestFullMCTSRun:
         chosen, rejected = select_best_rebuttal(candidates, state, n_simulations=30)
         assert isinstance(chosen, str)
         assert isinstance(rejected, list)
+
+
+class TestResolutionRollout:
+    def test_rollout_rewards_refutation_and_penalises_self_contradiction(self):
+        import random
+        from core.mcts import make_resolution_rollout
+        from core.resolution import atom, neg_atom
+
+        rollout = make_resolution_rollout(
+            candidate_clauses={"refute": neg_atom("Q"), "self": neg_atom("P"), "neutral": atom("R")},
+            own_clauses=[atom("P")],
+            opponent_clauses=[atom("Q")],
+            opponent_replies=[],
+        )
+        rng = random.Random(0)
+        assert rollout("refute", rng) > rollout("neutral", rng) > rollout("self", rng)
+
+    def test_rollout_penalises_exposure_to_opponent_reply(self):
+        import random
+        from core.mcts import make_resolution_rollout
+        from core.resolution import atom, implication_to_clause, neg_atom
+
+        rollout = make_resolution_rollout(
+            candidate_clauses={"exposed": atom("A"), "safe": atom("C")},
+            own_clauses=[atom("B")],
+            opponent_clauses=[],
+            opponent_replies=[implication_to_clause("A", "NotB_placeholder"), frozenset({("NOT", "A"), ("NOT", "B")})],
+        )
+        rng = random.Random(1)
+        exposed = sum(rollout("exposed", rng) for _ in range(40)) / 40
+        safe = sum(rollout("safe", rng) for _ in range(40)) / 40
+        assert exposed < safe
+
+    def test_mcts_uses_rollout_and_reports_chosen_score(self):
+        mcts = MCTS(n_simulations=20, rollout=lambda text, rng: 1.0 if text == "good" else 0.0)
+        chosen, rejected = mcts.select_best_rebuttal(["bad", "good"], DebateState())
+        assert chosen == "good"
+        assert mcts.chosen_score == 1.0
+        assert mcts.chosen_visits > rejected[0].visit_count
+
+    def test_rollout_penalises_repeating_own_position(self):
+        import random
+        from core.mcts import REWARD_REPEAT, make_resolution_rollout
+        from core.resolution import atom, neg_atom
+
+        rollout = make_resolution_rollout(
+            candidate_clauses={"repeat": atom("P"), "evidence": atom("E"), "fresh": neg_atom("Q")},
+            own_clauses=[atom("P"), atom("E")],
+            opponent_clauses=[atom("Q")],
+            opponent_replies=[],
+            claimed_clauses={atom("P")},
+        )
+        assert rollout("repeat", random.Random(0)) == REWARD_REPEAT
+        assert rollout("fresh", random.Random(0)) > 0
+        assert rollout("evidence", random.Random(0)) > REWARD_REPEAT
+
+    def test_new_issue_beats_stale_ping_pong(self):
+        import random
+        from core.mcts import make_resolution_rollout
+        from core.resolution import atom, neg_atom
+
+        rollout = make_resolution_rollout(
+            candidate_clauses={"ping": neg_atom("GamingLaptopPortable"), "fresh": atom("GamingLaptopGpuFast")},
+            own_clauses=[],
+            opponent_clauses=[atom("GamingLaptopPortable")],
+            opponent_replies=[],
+            claimed_clauses=set(),
+            candidate_issues={"ping": "portability", "fresh": "performance"},
+            argued_issues={"portability": 5},
+            recent_atom_counts={"GamingLaptopPortable": 4},
+        )
+        rng = random.Random(0)
+        assert rollout("fresh", rng) > rollout("ping", rng)

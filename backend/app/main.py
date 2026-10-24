@@ -12,14 +12,14 @@ import sys
 import os
 import logging
 
-                                                                           
+
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes_debate import router as debate_router
-from config import ALLOWED_ORIGINS, GEMINI_MODEL, NEMOTRON_CHAT_MODEL
+from config import ALLOWED_ORIGINS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("agentic_debate_arena")
@@ -30,7 +30,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-                               
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS + ["http://localhost:5173", "http://127.0.0.1:5173", "*"],
@@ -39,9 +39,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-                                                          
+
 app.include_router(debate_router)
-app.include_router(debate_router, prefix="/api")
 
 
 @app.on_event("startup")
@@ -60,15 +59,12 @@ def root():
         "app": "Agentic Debate Arena API",
         "status": "online",
         "version": "1.0.0",
-        "configured_models": {
-            "agent_a": GEMINI_MODEL,
-            "agent_b": NEMOTRON_CHAT_MODEL,
-        },
         "endpoints": [
             "POST /start-debate",
             "POST /next-turn",
             "GET /transcript/{debate_id}",
             "GET /mcts-trace/{debate_id}/{turn_number}",
+            "GET /summary/{debate_id}",
         ],
     }
 

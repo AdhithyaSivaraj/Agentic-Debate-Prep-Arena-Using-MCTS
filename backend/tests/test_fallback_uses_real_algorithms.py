@@ -1,63 +1,50 @@
 """
-test_fallback_uses_real_algorithms.py — Verification of Offline Fallback Integrity (FIX 2)
+test_fallback_uses_real_algorithms.py — Verification of Offline Fallback Integrity
 
-Asserts that when Gemini / OpenRouter API calls fail or rate-limit:
-1. The turn response explicitly sets mode="fallback" (transparency).
-2. Resolution engine's check_contradiction() algorithm is STILL executed on real KB data.
-3. MCTS engine's select_best_rebuttal() algorithm is STILL executed on real candidate data.
-4. Fallback ONLY replaces language generation (generate_claim), NEVER the core algorithms.
+When candidate generation fails mid-debate:
+1. The turn is marked mode="fallback" (transparency).
+2. Candidates come from the agent's side of the generated fact base — never from scripts.
+3. MCTS and resolution still execute on real KB data.
 """
-import sys
-import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
-
-import pytest
 from fastapi.testclient import TestClient
+
+import core.mcts as mcts_module
+from api.routes_debate import DEBATE_SESSIONS
+from tests.conftest import FAKE_FACTS
 from main import app
-import tools.tool_executor as executor_module
 
 client = TestClient(app)
 
 
-def test_fallback_mode_executes_real_algorithms():
-    """Verify that forcing API failures sets mode='fallback' while STILL executing MCTS & Resolution."""
-    
-    # Spy on core algorithm functions inside tool_executor
-    real_select_best_rebuttal = executor_module.select_best_rebuttal
-    select_best_rebuttal_spy = MagicMock(side_effect=real_select_best_rebuttal)
+def test_fallback_mode_executes_real_algorithms(fake_llm):
+    fake_llm.fail_on = {"candidates"}
+    start_res = client.post("/start-debate", json={"topic": "Should standardized exams be abolished?"})
+    assert start_res.status_code == 201
+    debate_id = start_res.json()["debate_id"]
 
-    with patch("agents.gemini_agent.GEMINI_API_KEY", "fake_key_forces_fallback"), \
-         patch("agents.nemotron_agent.OPENROUTER_API_KEY", "fake_key_forces_fallback"), \
-         patch.object(executor_module, "select_best_rebuttal", select_best_rebuttal_spy):
+    with patch.object(mcts_module.MCTS, "run", autospec=True, side_effect=mcts_module.MCTS.run) as run_spy:
+        t1 = client.post("/next-turn", json={"debate_id": debate_id}).json()
+        t2 = client.post("/next-turn", json={"debate_id": debate_id}).json()
 
-        # 1. Start Debate
-        start_res = client.post("/start-debate", json={"topic": "Should standardized exams be abolished?"})
-        assert start_res.status_code == 201
-        debate_id = start_res.json()["debate_id"]
+    assert t1["mode"] == "fallback" and t2["mode"] == "fallback"
+    assert run_spy.call_count == 2
 
-        # 2. Turn 1 (Agent A in fallback mode)
-        turn1_res = client.post("/next-turn", json={"debate_id": debate_id})
-        assert turn1_res.status_code == 200
-        t1 = turn1_res.json()
-        assert t1["mode"] == "fallback"
+    fact_texts = {f["text"] for f in FAKE_FACTS}
+    supporting = {f["text"] for f in FAKE_FACTS if f["relationship"] != "contradicts_proposition"}
+    opposing = {f["text"] for f in FAKE_FACTS if f["relationship"] != "supports_proposition"}
+    assert t1["claim"]["text"] in supporting
+    assert t2["claim"]["text"] in opposing
+    assert t1["claim"]["text"] in fact_texts
 
-        # 3. Turn 2 (Agent B in fallback mode)
-        turn2_res = client.post("/next-turn", json={"debate_id": debate_id})
-        assert turn2_res.status_code == 200
-        t2 = turn2_res.json()
-        assert t2["mode"] == "fallback"
+    assert t2["mcts_trace"]["rejected_candidates"]
+    assert "found" in t2["contradiction_result"]
+    assert "found" in t2["clash_result"]
+    assert DEBATE_SESSIONS[debate_id]["agent_b"].kb.get_opponent_clauses()
 
-        # Assert MCTS algorithm was called for real in tool_executor
-        assert select_best_rebuttal_spy.called, "MCTS select_best_rebuttal must be called during fallback!"
-        assert select_best_rebuttal_spy.call_count >= 2
 
-        # Assert MCTS trace is present and valid in turn 2
-        assert t2["mcts_trace"] is not None
-        assert "chosen_rebuttal" in t2["mcts_trace"]
-        assert len(t2["mcts_trace"]["rejected_candidates"]) > 0
-
-        # Assert Resolution contradiction result is computed for real
-        assert "found" in t2["contradiction_result"]
-        assert t2["contradiction_result"]["found"] is False
+def test_start_fails_without_any_llm(fake_llm):
+    fake_llm.fail_on = {"all"}
+    res = client.post("/start-debate", json={"topic": "Should cities ban cars?"})
+    assert res.status_code == 503

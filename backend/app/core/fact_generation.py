@@ -1,37 +1,30 @@
 """
 fact_generation.py — One-Time LLM-Based Fact Base Generation
 
-This is the ONLY place in the entire system where new LLM-generated content enters.
-During actual debate turns, no new generation occurs — everything runs on the local
-fact base produced here plus the classical algorithms.
+At debate start, an LLM generates a structured fact base for the topic. It serves two roles:
+    (a) Evidence — agents retrieve relevant facts (retrieval.py) to ground each claim.
+    (b) Vocabulary — the facts' propositional atoms are the shared logical language both
+        agents must use, so resolution can connect one agent's claims to the other's.
 
 === FLOW ===
 
 1. User submits a debate topic (e.g., "Should exams be abolished?")
-2. Gemini generates 20–25 factual claims with explicit logical relationships
-   (supports / contradicts / implies)
-3. Our code normalises the LLM output into strict propositional clause form
-   (A → B, ¬A, A) using parse_propositional_form() from tool_executor.py
-4. The resulting clauses seed both:
-   (a) The resolution KB (via KnowledgeBase.tell())
-   (b) The retrieval index (via retrieval.build_index())
-
-=== WHAT THE LLM IS ASKED TO DO ===
-
-The prompt explicitly asks for structured output: each fact must include
-- A natural-language sentence
-- A propositional form (atom → atom, ¬atom, or atom)
-- A relationship type (supports / contradicts / is_independent)
-
-The propositional form is what our algorithms use; the natural-language sentence
-is what agents cite when grounding their claims.
+2. The LLM generates ~20 factual claims, each with a propositional form
+   (A → B, ¬A, A) and a side (supports / contradicts / independent)
+3. parse_propositional_form() normalises each form into a resolution clause
+4. Clauses seed the agents' knowledge bases by side; texts seed the retrieval index
 """
 from __future__ import annotations
 
-import json
-import re
+import logging
+from dataclasses import dataclass
 
-from core.resolution import Clause, clause_to_str
+from core.resolution import Clause, clause_to_str, parse_propositional_form
+from llm_client import LLMUnavailable, available_default_models, complete_any, complete_with_fallbacks, parse_json_payload
+
+logger = logging.getLogger(__name__)
+
+FACT_MODEL_PREFERENCE = "openai/gpt-oss-120b"
 
 
 class FactRecord:
@@ -39,10 +32,10 @@ class FactRecord:
     A single fact from the generated fact base.
 
     Attributes:
-        text:             Natural-language sentence (used in retrieval + claim generation)
+        text:             Natural-language sentence (used in retrieval + claim grounding)
         propositional:    Propositional clause form as a string (e.g., "Exams → StressHigh")
         clause:           Parsed Clause (frozenset) — None if parsing failed
-        relationship:     "supports", "contradicts", or "is_independent"
+        relationship:     "supports_proposition", "contradicts_proposition", or "is_independent"
     """
     __slots__ = ("text", "propositional", "clause", "relationship")
 
@@ -63,174 +56,149 @@ class FactRecord:
         return f"FactRecord({clause_str!r}, rel={self.relationship!r})"
 
 
+@dataclass
+class DebateFrame:
+    """What each side defends. A topic like "X or Y?" has no truth value, so it is
+    rewritten into an arguable resolution with an explicit position per side."""
+    resolution: str
+    proposer_position: str
+    opponent_position: str
+
+
+def default_frame(topic: str) -> DebateFrame:
+    return DebateFrame(
+        resolution=topic,
+        proposer_position=f'Argues FOR: "{topic}"',
+        opponent_position=f'Argues AGAINST: "{topic}"',
+    )
+
+
+def frame_debate(topic: str) -> DebateFrame:
+    """Rewrite the topic into a resolution and two opposing positions; falls back to FOR/AGAINST."""
+    prompt = f"""A user entered this debate topic: "{topic}"
+
+Rewrite it as a debate with two clearly opposed sides. If the topic is a choice ("X or Y?",
+"X vs Y"), the Proposer defends the first option and the Opponent the second. If it is a yes/no
+question or a statement, the Proposer defends "yes" and the Opponent "no".
+
+Return a JSON object:
+{{"resolution": "one declarative sentence the Proposer defends, e.g. 'College students should buy a gaming laptop rather than a business laptop.'",
+  "proposer_position": "one short sentence: what the Proposer argues",
+  "opponent_position": "one short sentence: what the Opponent argues"}}"""
+    try:
+        raw, _ = complete_any(FACT_MODEL_PREFERENCE, "You frame debates precisely. Output JSON only.", prompt, json_mode=True, timeout=20.0)
+        data = parse_json_payload(raw)
+        frame = DebateFrame(
+            resolution=str(data["resolution"]).strip(),
+            proposer_position=str(data["proposer_position"]).strip(),
+            opponent_position=str(data["opponent_position"]).strip(),
+        )
+        if frame.resolution and frame.proposer_position and frame.opponent_position:
+            return frame
+    except (LLMUnavailable, ValueError, KeyError, TypeError) as e:
+        logger.warning(f"Debate framing failed ({str(e)[:200]}); using FOR/AGAINST.")
+    return default_frame(topic)
+
+
 FACT_GENERATION_SYSTEM_PROMPT = """You are a logical fact extractor for a debate system.
 Your output is consumed by a propositional resolution engine — accuracy of logical form is critical.
-Do not add opinions. Generate factual, logically structured claims only."""
+Do not add opinions. Generate factual, logically structured claims only. Output JSON only."""
 
-def build_fact_generation_prompt(topic: str, n_facts: int = 20) -> str:
-    """
-    Build the prompt sent to Gemini to generate the fact base for a debate topic.
 
-    The prompt instructs the LLM to produce structured JSON output that our parser
-    can normalise into propositional clauses.
-    """
-    return f"""Generate exactly {n_facts} factual claims about the following debate topic.
+def build_fact_generation_prompt(topic: str, n_facts: int = 20, frame: DebateFrame | None = None) -> str:
+    """Build the prompt asking the LLM for a structured, logically connected fact base."""
+    frame = frame or default_frame(topic)
+    return f"""Generate exactly {n_facts} factual claims about the following debate.
 Each claim must have an explicit propositional logical form that can be parsed by a theorem prover.
 
 Debate topic: "{topic}"
+Resolution: "{frame.resolution}"
+Proposer: {frame.proposer_position}
+Opponent: {frame.opponent_position}
 
-Output a JSON array of objects. Each object must have these exact keys:
-- "text": a clear, factual natural-language sentence (1–2 sentences max)
+Output a JSON object of the form {{"facts": [...]}}. Each fact object must have these exact keys:
+- "text": a clear, specific, factual natural-language sentence (1–2 sentences max)
 - "propositional": the logical form using ONLY these formats:
-    * "A → B"    (A implies B; use CamelCase atom names, no spaces within names)
-    * "¬A"       (A is false / negated)
-    * "A"        (A is asserted as true)
+    * "A → B"    (A implies B)
+    * "¬A"       (A is false)
+    * "A"        (A is true)
     Examples: "ExamsAbolished → StressReduced", "¬ExamsBeneficial", "ExamsTestMemory"
 - "relationship": one of "supports_proposition" | "contradicts_proposition" | "is_independent"
-  (relative to the general proposition that "{topic}" is a good idea)
+  ("supports" = helps the Proposer's position, "contradicts" = helps the Opponent's position)
 
 Rules:
-- Atom names must be CamelCase single tokens (e.g., ExamsAbolished, StressHigh, LearningImproved)
-- No spaces within atom names
-- Use → for implications, ¬ for negation
-- Include a mix of supporting and contradicting facts for a balanced debate
-- Facts must be grounded in real-world knowledge, not opinions
-
-Return ONLY the JSON array — no explanation, no markdown fences, no extra text."""
+- Atom names must be CamelCase single tokens — no spaces — and must name their subject
+  (GamingLaptopHeavy, BusinessLaptopBatteryLong — never a subject-less WeightHeavy or BatteryLong)
+- Cover several distinct issues (e.g. cost, performance, reliability, practicality), not just one
+- Use 10–15 distinct atoms in total and REUSE them across facts so the facts connect
+  (one fact's consequent should be another fact's antecedent)
+- At least half of the facts must be plain assertions ("A" or "¬A") — concrete claims
+  a theorem prover can refute; use "A → B" for the causal links between them
+- Include genuine disagreement: some supporting and contradicting facts must use the same
+  atoms with opposite polarity (e.g., "C" vs "¬C", or "A → B" vs "A → ¬B")
+- Roughly balance supporting and contradicting facts
+- Facts must be grounded in real-world knowledge, not opinions"""
 
 
 def parse_fact_generation_response(raw_response: str) -> list[FactRecord]:
     """
-    Parse the LLM's JSON response into a list of FactRecord objects.
+    Parse the LLM's JSON response into FactRecord objects.
 
-    Handles:
-    - Clean JSON arrays
-    - JSON embedded in markdown code fences
-    - Partial failures (malformed entries are skipped with a warning)
+    Accepts a bare array or an object {"facts": [...]}, optionally wrapped in markdown
+    fences. Entries missing "text" or "propositional" are skipped; entries whose form
+    cannot be parsed are kept with clause=None.
 
-    Returns a list of FactRecord with valid clauses. Records where propositional
-    form could not be parsed still have clause=None and are included in the list
-    (callers decide whether to skip or keep them).
+    Raises:
+        ValueError: if the response is not valid JSON or contains no fact array.
     """
-                                                                             
-    from tools.tool_executor import parse_propositional_form
-
-                                      
-    cleaned = raw_response.strip()
-    if "</think>" in cleaned:
-        cleaned = cleaned.split("</think>")[-1].strip()
-
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```[a-z]*\n?", "", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\n?```$", "", cleaned)
-
-    # Extract JSON array bounds if model outputs surrounding text
-    start_idx = cleaned.find("[")
-    end_idx = cleaned.rfind("]")
-    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        cleaned = cleaned[start_idx : end_idx + 1]
-
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError:
-        try:
-            fixed = re.sub(r",\s*([\]}])", r"\1", cleaned)
-            data = json.loads(fixed)
-        except Exception as e:
-            raise ValueError(
-                f"Fact generation response is not valid JSON: {e}\n"
-                f"Raw response (first 500 chars): {raw_response[:500]}"
-            )
-
+    data = parse_json_payload(raw_response)
+    if isinstance(data, dict):
+        data = data.get("facts")
     if not isinstance(data, list):
-        raise ValueError(
-            f"Expected a JSON array, got {type(data).__name__}"
-        )
+        raise ValueError(f"Expected a JSON array of facts, got {type(data).__name__}")
 
     records: list[FactRecord] = []
-    for i, item in enumerate(data):
+    for item in data:
         if not isinstance(item, dict):
             continue
-
-        text = item.get("text", "").strip()
-        propositional = item.get("propositional", "").strip()
-        relationship = item.get("relationship", "is_independent").strip()
-
+        text = str(item.get("text", "")).strip()
+        propositional = str(item.get("propositional", "")).strip()
+        relationship = str(item.get("relationship", "is_independent")).strip()
         if not text or not propositional:
-            continue                           
-
-        clause = parse_propositional_form(propositional)
-
+            continue
         records.append(FactRecord(
             text=text,
             propositional=propositional,
-            clause=clause,
+            clause=parse_propositional_form(propositional),
             relationship=relationship,
         ))
-
     return records
 
 
-def generate_fact_base(
-    topic: str,
-    gemini_api_key: str,
-    n_facts: int = 20,
-    model_name: str = "gemini-3.6-flash",
-) -> list[FactRecord]:
+def generate_fact_base(topic: str, n_facts: int = 20, frame: DebateFrame | None = None) -> tuple[list[FactRecord], str]:
     """
-    Call Gemini to generate n_facts facts about the topic, then parse + normalise
-    the output into FactRecord objects with propositional clause form.
-
-    This is called ONCE per debate session (POST /start-debate).
-    After this call, all debate logic uses the local fact base — no further LLM
-    fact generation occurs during debate turns.
-
-    Args:
-        topic:          The debate topic string.
-        gemini_api_key: Google AI Studio API key (from config.py / .env).
-        n_facts:        Number of facts to request (default 20).
-        model_name:     Gemini model to use (default gemini-2.0-flash, free tier).
-
-    Returns:
-        List of FactRecord objects. Records with clause=None were not parseable
-        into propositional form (logged as warnings).
+    Generate and parse the fact base, trying the preferred fact model first and then
+    every other configured provider. Returns (records, model_used).
 
     Raises:
-        ValueError: if the LLM response cannot be parsed as JSON.
-        Exception:  if the Gemini API call fails (caller should handle retry).
+        LLMUnavailable: if no provider returned a parseable fact base.
     """
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=gemini_api_key)
-    prompt = build_fact_generation_prompt(topic, n_facts=n_facts)
-    config = types.GenerateContentConfig(
-        system_instruction=FACT_GENERATION_SYSTEM_PROMPT
-    )
-
-    response = None
-    for attempt in range(3):
+    prompt = build_fact_generation_prompt(topic, n_facts=n_facts, frame=frame)
+    models = [FACT_MODEL_PREFERENCE] + [m for m in available_default_models() if m != FACT_MODEL_PREFERENCE]
+    errors: list[str] = []
+    for model in models:
         try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config,
+            raw, model_used = complete_with_fallbacks(
+                model, FACT_GENERATION_SYSTEM_PROMPT, prompt, json_mode=True, timeout=45.0
             )
-            break
-        except Exception as e:
-            err_str = str(e)
-            if ("429" in err_str or "quota" in err_str.lower()) and attempt < 2:
-                import time
-                time.sleep(4)
-            else:
-                raise e
-
-    if not response:
-        raise RuntimeError("Failed to generate facts from Gemini API.")
-
-    raw_text = response.text
-    records = parse_fact_generation_response(raw_text)
-    return records
+            records = parse_fact_generation_response(raw)
+            if extract_valid_clauses(records):
+                return records, model_used
+            errors.append(f"{model_used}: no parseable propositional forms")
+        except (LLMUnavailable, ValueError) as e:
+            errors.append(str(e)[:300])
+            logger.warning(f"Fact generation via '{model}' failed ({str(e)[:200]}). Trying next provider...")
+    raise LLMUnavailable("; ".join(errors))
 
 
 def extract_fact_texts(records: list[FactRecord]) -> list[str]:
@@ -241,33 +209,3 @@ def extract_fact_texts(records: list[FactRecord]) -> list[str]:
 def extract_valid_clauses(records: list[FactRecord]) -> list[Clause]:
     """Return only clauses that parsed successfully (for KnowledgeBase seeding)."""
     return [r.clause for r in records if r.clause is not None]
-
-
-def generate_fact_base_openai(
-    topic: str,
-    api_key: str,
-    base_url: str,
-    model_name: str,
-    n_facts: int = 20,
-) -> list[FactRecord]:
-    """
-    Call OpenAI-compatible provider (Groq LPU, NVIDIA NIM) to generate n_facts facts about topic.
-    """
-    from openai import OpenAI
-
-    client = OpenAI(base_url=base_url, api_key=api_key)
-    prompt = build_fact_generation_prompt(topic, n_facts=n_facts)
-
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": FACT_GENERATION_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.6,
-        timeout=35.0,
-    )
-
-    msg = response.choices[0].message
-    content = msg.content or (msg.reasoning if hasattr(msg, "reasoning") else "") or ""
-    return parse_fact_generation_response(content)

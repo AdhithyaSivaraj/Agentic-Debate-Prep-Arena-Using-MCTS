@@ -44,3 +44,6 @@ PROJECT_COMPLETE_OVERVIEW.md
 architecture_workflow.drawio
 md files/
 
+# Project report (submitted separately, not part of the code)
+/Project_Report_*.docx
+/Project_Report_*.pdf

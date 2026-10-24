@@ -1,5 +1,5 @@
 import pytest
-from core.topic_knowledge import clean_claim_text
+from llm_client import clean_claim_text
 
 
 def test_clean_claim_text_removes_generated_claim_prefix():

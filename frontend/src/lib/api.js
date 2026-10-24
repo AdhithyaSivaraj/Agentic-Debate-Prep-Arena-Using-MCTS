@@ -18,7 +18,6 @@ async function fetchJSON(endpoint, options = {}) {
       const errData = await response.json();
       errorMsg = errData.detail || errData.message || errorMsg;
     } catch {
-      
     }
     throw new Error(errorMsg);
   }
@@ -26,7 +25,7 @@ async function fetchJSON(endpoint, options = {}) {
   return response.json();
 }
 
-export async function startDebate(topic, maxTurns = 20, proposerModel = 'gemini-3.6-flash', opponentModel = 'gemini-3.6-flash') {
+export async function startDebate(topic, maxTurns = 20, proposerModel = 'openai/gpt-oss-120b', opponentModel = 'deepseek/deepseek-v3.2') {
   return fetchJSON('/start-debate', {
     method: 'POST',
     body: JSON.stringify({
@@ -51,8 +50,4 @@ export async function getTranscript(debateId) {
 
 export async function getDebateSummary(debateId) {
   return fetchJSON(`/summary/${debateId}`);
-}
-
-export async function getMctsTrace(debateId, turnNumber) {
-  return fetchJSON(`/mcts-trace/${debateId}/${turnNumber}`);
 }

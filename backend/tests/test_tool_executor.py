@@ -353,19 +353,6 @@ class TestGenerateClaim:
         result = execute_tool("generate_claim", {}, ctx)
         assert result.success is False
 
-    def test_output_has_instruction(self):
-        ctx = make_test_context()
-        result = execute_tool(
-            "generate_claim",
-            {
-                "context": "ctx",
-                "direction": "direction",
-                "propositional_form": "A → B",
-                "agent_id": "agent_a",
-            },
-            ctx,
-        )
-        assert "instruction" in result.output
 
     def test_context_preserved_in_output(self):
         ctx = make_test_context()
@@ -469,3 +456,77 @@ class TestFactGeneration:
         records = parse_fact_generation_response(json.dumps(data))
         clauses = extract_valid_clauses(records)
         assert len(clauses) == 1
+
+
+class TestDebateLogicTools:
+    """Clash detection, opponent tracking, and resolution-scored MCTS selection."""
+
+    def test_clash_detects_conflict_with_opponent_kb(self):
+        ctx = make_test_context()
+        ctx.opponent_kb.tell(atom("OutcomesImprove"))
+        result = execute_tool("check_contradiction", {"target": "clash", "propositional_form": "¬OutcomesImprove"}, ctx)
+        assert result.success and result.output["found"] is True
+
+    def test_clash_ignores_unrelated_clause(self):
+        ctx = make_test_context()
+        ctx.opponent_kb.tell(atom("OutcomesImprove"))
+        result = execute_tool("check_contradiction", {"target": "clash", "propositional_form": "CostsFall"}, ctx)
+        assert result.output["found"] is False
+
+    def test_clash_requires_parseable_form(self):
+        ctx = make_test_context()
+        result = execute_tool("check_contradiction", {"target": "clash", "propositional_form": "not a form at all"}, ctx)
+        assert result.success is False
+
+    def test_generate_claim_records_in_opponent_track(self):
+        ctx = make_test_context()
+        execute_tool(
+            "generate_claim",
+            {"context": "c", "direction": "Outcomes improve.", "propositional_form": "OutcomesImprove", "agent_id": "agent_a"},
+            ctx,
+        )
+        assert atom("OutcomesImprove") in ctx.opponent_kb.get_opponent_clauses()
+
+    def test_mcts_prefers_refutation_and_avoids_self_contradiction(self):
+        ctx = make_test_context()
+        ctx.agent_kb.tell(atom("PilotsSucceeded"))
+        ctx.opponent_kb.tell(atom("CostsRise"))
+        result = execute_tool(
+            "select_best_rebuttal",
+            {
+                "candidates": ["Pilots failed.", "Costs do not rise.", "Weather is nice."],
+                "propositional_forms": ["¬PilotsSucceeded", "¬CostsRise", "WeatherNice"],
+                "agent_id": "agent_a",
+                "n_simulations": 30,
+            },
+            ctx,
+        )
+        out = result.output
+        assert out["chosen_rebuttal"] == "Costs do not rise."
+        assert out["chosen_propositional_form"] == "¬CostsRise"
+        scores = {r["text"]: r["score"] for r in out["rejected_candidates"]}
+        assert out["chosen_score"] > scores["Weather is nice."] > scores["Pilots failed."]
+
+    def test_clash_against_unspoken_evidence_is_not_a_refutation(self):
+        ctx = make_test_context()
+        ctx.opponent_kb.tell(atom("OutcomesImprove"))  # seeded evidence, never claimed
+        ctx.opponent_claimed_clauses = set()
+        result = execute_tool("check_contradiction", {"target": "clash", "propositional_form": "¬OutcomesImprove"}, ctx)
+        assert result.output["found"] is False
+
+    def test_clash_against_claimed_position_is_a_refutation(self):
+        ctx = make_test_context()
+        ctx.opponent_kb.tell(implication_to_clause("Pilots", "OutcomesImprove"))  # evidence
+        ctx.opponent_kb.tell(atom("Pilots"))                                      # claimed
+        ctx.opponent_claimed_clauses = {atom("Pilots")}
+        result = execute_tool("check_contradiction", {"target": "clash", "propositional_form": "¬OutcomesImprove"}, ctx)
+        assert result.output["found"] is True
+
+    def test_direct_denial_counts_even_if_evidence_agrees_with_claim(self):
+        ctx = make_test_context()
+        ctx.opponent_kb.tell(atom("CostHigher"))      # their evidence...
+        ctx.opponent_kb.tell(atom("Ports"))
+        ctx.opponent_kb.tell(implication_to_clause("Ports", "CostHigher"))
+        ctx.opponent_claimed_clauses = {atom("CostHigher")}  # ...which they also claimed aloud
+        result = execute_tool("check_contradiction", {"target": "clash", "propositional_form": "¬CostHigher"}, ctx)
+        assert result.output["found"] is True

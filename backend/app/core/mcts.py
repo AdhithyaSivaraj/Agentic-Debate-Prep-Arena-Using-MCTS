@@ -16,10 +16,11 @@ Each rebuttal-selection call is framed as a two-player, zero-sum-ish game:
     - A "game state" is the debate's snapshot at a given turn, carrying enough
       information to score a simulated follow-up exchange.
 
-Because natural-language branching factor is huge, we do NOT use pure random rollouts.
-Instead, simulation uses a *heuristic scoring function* on the state reached after
-one move, rather than simulating to a terminal leaf.  This is a standard technique for
-language-based adversarial search (analogous to eval functions in chess engines).
+Because the natural-language branching factor is huge, the LLM proposes a handful of
+candidate moves (each with a propositional form) and MCTS chooses among them. Simulation
+is a *resolution rollout* (make_resolution_rollout): each candidate is checked against
+both knowledge bases, and a randomly sampled opponent reply tests whether the move
+exposes us — so repeated visits estimate the move's expected value.
 
 === STATE REPRESENTATION ===
 
@@ -42,9 +43,9 @@ This is the "performance measure" for the debater agent described in the master 
                  (or terminal node) is reached.
 2. Expansion   — pick one untried child move, add it as a new Node, apply the move
                  to get the child state.
-3. Simulation  — from the new child, score the state using the heuristic (one-step
-                 lookahead). No further tree traversal needed for MVP; extending to
-                 multi-step rollout is a natural future improvement.
+3. Simulation  — score the child's move with the rollout function (resolution checks
+                 plus a sampled opponent reply), or with the state heuristic if no
+                 rollout is supplied.
 4. Backpropagation — walk back up to root, incrementing visit_count and accumulating
                  value at every ancestor.
 
@@ -57,7 +58,7 @@ The caller (tool_executor.py) passes a list of candidate rebuttal strings + the
 current debate state.  Each candidate is treated as a "move" (child of the root).
 MCTS runs for n_simulations iterations, then returns the candidate with the highest
 average score (value / visit_count).  The rejected candidates are also returned
-with their scores — this is what the UI's MCTSTracePanel displays.
+with their scores — this is what the UI's MCTS trace displays.
 """
 from __future__ import annotations
 
@@ -65,10 +66,12 @@ import math
 import random
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
+
+from core.resolution import Clause, atoms_of, check_contradiction
 
 
-UCB1_EXPLORATION_CONSTANT: float = math.sqrt(2)                               
+UCB1_EXPLORATION_CONSTANT: float = math.sqrt(2)
 
 
 @dataclass
@@ -150,13 +153,11 @@ class Node:
     visit_count: int = 0
     value: float = 0.0
     untried_moves: list[str] = field(default_factory=list)
-    move: str = ""                                                               
+    move: str = ""
 
-                                                                        
     def ucb1(self, exploration_constant: float = UCB1_EXPLORATION_CONSTANT) -> float:
         """
         Compute the UCB1 score for this node:
-
             UCB1 = (value / visit_count) + C * sqrt(ln(parent.visit_count) / visit_count)
 
         The first term is exploitation (high-scoring nodes are preferred).
@@ -219,9 +220,9 @@ class RejectedCandidate:
     MCTSTracePanel ("show your work" visualisation).
     """
     text: str
-    score: float                                                
+    score: float
     visit_count: int
-    raw_value: float                                                
+    raw_value: float
 
 
 class MCTS:
@@ -231,13 +232,28 @@ class MCTS:
     Usage:
         mcts = MCTS(n_simulations=50)
         chosen, rejected = mcts.select_best_rebuttal(candidates, current_state)
+
+    If `rollout` is given, simulation calls rollout(candidate_text, rng) instead of the
+    state heuristic. The debate engine passes make_resolution_rollout(), which scores a
+    candidate by running propositional resolution against both knowledge bases with a
+    randomly sampled opponent reply — so repeated visits estimate an expected value.
+    After select_best_rebuttal(), chosen_score / chosen_visits describe the winner.
     """
 
-    def __init__(self, n_simulations: int = 50, exploration_constant: float = UCB1_EXPLORATION_CONSTANT):
+    def __init__(
+        self,
+        n_simulations: int = 50,
+        exploration_constant: float = UCB1_EXPLORATION_CONSTANT,
+        rollout: Callable[[str, random.Random], float] | None = None,
+        seed: int = 0,
+    ):
         self.n_simulations = n_simulations
         self.exploration_constant = exploration_constant
+        self.rollout = rollout
+        self.rng = random.Random(seed)
+        self.chosen_score: float = 0.0
+        self.chosen_visits: int = 0
 
-                                                                        
     def select(self, node: Node) -> Node:
         """
         Traverse the tree from `node` downward using UCB1 until we reach
@@ -252,7 +268,6 @@ class MCTS:
             current = current.best_child(self.exploration_constant)
         return current
 
-                                                                        
     def expand(self, node: Node) -> Node:
         """
         Pick one untried move from `node.untried_moves`, remove it from the list,
@@ -266,37 +281,32 @@ class MCTS:
         if not node.untried_moves:
             raise ValueError("expand() called on a fully-expanded node")
 
-        move = node.untried_moves.pop(0)                                     
+        move = node.untried_moves.pop(0)
         child_state = node.state.apply_candidate(move)
         child = Node(
             state=child_state,
             parent=node,
-            untried_moves=[],                                                         
+            untried_moves=[],
             move=move,
         )
         node.children.append(child)
         return child
 
-                                                                        
     def simulate(self, node: Node) -> float:
         """
-        Evaluate the state at `node` using the heuristic scoring function.
+        Evaluate `node`.
 
-        Design note (from master prompt):
-            "Branching factor is language-based" — pure random rollout is impractical.
-            We use the state's heuristic_score() as a one-step simulation result.
-            This is a standard approximation for domains with large action spaces.
-
-        In a future extension, this could be replaced with a deeper lookahead by
-        generating opponent counter-moves and running resolution on them, but for MVP
-        the one-step heuristic is both sufficient and more transparent.
+        With a rollout function, the candidate move at this node is scored by a
+        stochastic resolution rollout (see make_resolution_rollout). Without one,
+        the state's heuristic_score() is used as a one-step evaluation.
 
         Returns:
-            float — the heuristic score of the node's state.
+            float — the simulation result for this node.
         """
+        if self.rollout is not None and node.move:
+            return float(self.rollout(node.move, self.rng))
         return node.state.heuristic_score()
 
-                                                                        
     def backpropagate(self, node: Node, result: float) -> None:
         """
         Walk from `node` back up to the root, adding `result` to every
@@ -311,27 +321,21 @@ class MCTS:
             current.value += result
             current = current.parent
 
-                                                                        
     def run(self, root: Node) -> None:
         """
         Execute the MCTS main loop for self.n_simulations iterations.
         Each iteration runs: Select → Expand (if possible) → Simulate → Backpropagate.
         """
         for _ in range(self.n_simulations):
-                                                          
             node = self.select(root)
 
-                                                                                     
             if node.untried_moves:
                 node = self.expand(node)
 
-                                                                           
             result = self.simulate(node)
 
-                                                                          
             self.backpropagate(node, result)
 
-                                                                        
     def select_best_rebuttal(
         self,
         candidates: list[str],
@@ -362,7 +366,6 @@ class MCTS:
         if not candidates:
             raise ValueError("select_best_rebuttal requires at least one candidate")
 
-                                                       
         seen: set[str] = set()
         unique_candidates: list[str] = []
         for c in candidates:
@@ -370,17 +373,15 @@ class MCTS:
                 seen.add(c)
                 unique_candidates.append(c)
 
-                                                                      
         root = Node(
             state=deepcopy(current_state),
             untried_moves=list(unique_candidates),
         )
 
-                  
         self.run(root)
 
-                                                                                    
         if not root.children:
+            self.chosen_score, self.chosen_visits = 0.0, 0
             return (
                 unique_candidates[0],
                 [
@@ -389,11 +390,11 @@ class MCTS:
                 ],
             )
 
-                                                                 
         winner = root.best_child_by_visits()
         chosen_text = winner.move
+        self.chosen_score = round(winner.value / winner.visit_count, 4) if winner.visit_count else 0.0
+        self.chosen_visits = winner.visit_count
 
-                                                                  
         rejected: list[RejectedCandidate] = []
         for child in root.children:
             if child.move == chosen_text:
@@ -408,7 +409,6 @@ class MCTS:
                 )
             )
 
-                                                                                              
         tried_moves = {child.move for child in root.children}
         for cand in unique_candidates:
             if cand not in tried_moves and cand != chosen_text:
@@ -430,3 +430,114 @@ def select_best_rebuttal(
     """
     mcts = MCTS(n_simulations=n_simulations)
     return mcts.select_best_rebuttal(candidates, current_state)
+
+
+# Rollout reward weights — contradictions dominate; engagement and grounding break ties.
+REWARD_REPEAT = -1.0     # candidate re-asserts a position we already claimed this debate
+REWARD_FORCED = 1.0      # candidate is inconsistent with the opponent's position (a refutation)
+REWARD_SELF = -1.5       # candidate contradicts our own knowledge base
+REWARD_EXPOSED = -0.5    # a plausible opponent reply would then derive a contradiction in our KB
+REWARD_ENGAGES = 0.2     # candidate shares an atom with the opponent's last claim
+REWARD_NEW_ISSUE = 0.4   # candidate opens an issue nobody has argued yet
+REWARD_STALE = -0.3      # candidate re-litigates an atom argued STALE_AFTER+ times in recent turns
+STALE_FORCED_FACTOR = 0.4  # a refutation on a stale atom is worth this fraction of REWARD_FORCED
+STALE_AFTER = 3
+REWARD_GROUNDED = 0.2    # scaled by the fraction of the candidate's atoms in the fact-base vocabulary
+
+
+def make_resolution_rollout(
+    candidate_clauses: dict[str, Clause | None],
+    own_clauses: list[Clause],
+    opponent_clauses: list[Clause],
+    opponent_replies: list[Clause],
+    opponent_background: list[Clause] | None = None,
+    opponent_last_clause: Clause | None = None,
+    vocabulary: set[str] | None = None,
+    claimed_clauses: set[Clause] | None = None,
+    candidate_issues: dict[str, str] | None = None,
+    argued_issues: dict[str, int] | None = None,
+    recent_atom_counts: dict[str, int] | None = None,
+) -> Callable[[str, random.Random], float]:
+    """
+    Build the simulation function MCTS uses for debate moves.
+
+    A candidate that re-asserts a clause we already claimed (claimed_clauses) scores REWARD_REPEAT
+    and nothing else; citing our seeded evidence aloud is not a repeat.
+    Otherwise, for a candidate clause C and a randomly sampled opponent reply R:
+        forced   — C contradicts what the opponent claimed, directly or read together with
+                   their evidence (opponent_background) — but not their evidence alone
+        self     — own_clauses ∪ {C} derives ⊥               (we contradict ourselves)
+        exposed  — own_clauses ∪ {C, R} derives ⊥, but neither own ∪ {C} nor own ∪ {R} does
+                   (asserting C opens a hole the opponent can exploit with R)
+    plus small bonuses for engaging the opponent's last claim and for using fact-base atoms,
+    a bonus for opening an issue not yet argued, and a staleness penalty for atoms argued
+    STALE_AFTER+ times recently (which also shrinks the value of refuting on them) — so the
+    search prefers moving the debate forward over trading denials of the same atom.
+
+    The deterministic parts are cached per candidate; the sampled reply makes each
+    rollout a Monte Carlo estimate of how safe the move is.
+    """
+    vocabulary = vocabulary or set()
+    opponent_consistent = not check_contradiction(opponent_clauses).found
+    own_consistent = not check_contradiction(own_clauses).found
+    last_atoms = atoms_of(opponent_last_clause) if opponent_last_clause else set()
+    claimed = claimed_clauses or set()
+    issues = candidate_issues or {}
+    argued = {k.strip().lower() for k in (argued_issues or {})}
+    atom_uses = recent_atom_counts or {}
+    background = opponent_background or []
+    opponent_claimed = [c for c in opponent_clauses if c not in set(background)]
+    base_cache: dict[str, float] = {}
+    reply_cache: dict[tuple[str, Clause], bool] = {}
+    own_with_reply_cache: dict[Clause, bool] = {}
+
+    def base_reward(text: str, clause: Clause) -> float:
+        if text not in base_cache:
+            reward = 0.0
+            direct = check_contradiction(opponent_claimed + [clause]).found
+            via_evidence = (
+                opponent_consistent
+                and check_contradiction(opponent_clauses + [clause]).found
+                and not check_contradiction(background + [clause]).found
+            )
+            atoms = atoms_of(clause)
+            stale = any(atom_uses.get(a, 0) >= STALE_AFTER for a in atoms)
+            if direct or via_evidence:
+                reward += REWARD_FORCED * (STALE_FORCED_FACTOR if stale else 1.0)
+            if stale:
+                reward += REWARD_STALE
+            issue = issues.get(text, "").strip().lower()
+            if issue and issue not in argued:
+                reward += REWARD_NEW_ISSUE
+            if own_consistent and check_contradiction(own_clauses + [clause]).found:
+                reward += REWARD_SELF
+            if atoms & last_atoms:
+                reward += REWARD_ENGAGES
+            if atoms and vocabulary:
+                reward += REWARD_GROUNDED * len(atoms & vocabulary) / len(atoms)
+            base_cache[text] = reward
+        return base_cache[text]
+
+    def rollout(text: str, rng: random.Random) -> float:
+        clause = candidate_clauses.get(text)
+        if clause is None:
+            return REWARD_SELF
+        if clause in claimed:
+            return REWARD_REPEAT
+        reward = base_reward(text, clause)
+        if opponent_replies and own_consistent:
+            reply = rng.choice(opponent_replies)
+            key = (text, reply)
+            if key not in reply_cache:
+                if reply not in own_with_reply_cache:
+                    own_with_reply_cache[reply] = check_contradiction(own_clauses + [reply]).found
+                reply_cache[key] = (
+                    not own_with_reply_cache[reply]
+                    and not check_contradiction(own_clauses + [clause]).found
+                    and check_contradiction(own_clauses + [clause, reply]).found
+                )
+            if reply_cache[key]:
+                reward += REWARD_EXPOSED
+        return reward
+
+    return rollout

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ArgumentGraph from './ArgumentGraph';
+import React, { useState, useEffect } from 'react';
 import ThemeSwitcher from './ThemeSwitcher';
+import { MODEL_GROUPS, DEFAULT_PROPOSER, DEFAULT_OPPONENT } from '../lib/models';
 
 const SUGGESTED = [
   { n: '01', text: 'Should AI development be globally regulated?' },
@@ -23,56 +23,16 @@ const DERIVE_LINES = [
   'resolve(claim_1, claim_2) ⊢ ⊥',
 ];
 
-const MODEL_GROUPS = [
-  {
-    name: 'Groq LPU (Ultra-Fast Hardware — ~300-1000 tokens/s)',
-    models: [
-      { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Default Proposer — Groq LPU)' },
-      { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Groq LPU — ~1000 t/s)' },
-      { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Groq LPU)' },
-    ],
-  },
-  {
-    name: 'Premier Open Models (OpenRouter)',
-    models: [
-      { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B (Default Opponent)' },
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Meta Llama 3.3 70B Instruct' },
-      { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1 (Full 671B Reasoning Engine)' },
-      { id: 'meta-llama/llama-3.1-405b-instruct', label: 'Meta Llama 3.1 405B Flagship' },
-      { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B Instruct' },
-    ],
-  },
-  {
-    name: 'Google Gemini (Multimodal & Fast Reasoning)',
-    models: [
-      { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-    ],
-  },
-  {
-    name: 'NVIDIA NIM (Enterprise GPU Microservices)',
-    models: [
-      { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', label: 'Nemotron Super 49B (NVIDIA NIM)' },
-      { id: 'meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (NVIDIA NIM)' },
-    ],
-  },
-];
-
-let docketCounter = Math.floor(Math.random() * 8900) + 100;
-
 export default function TopicSetup({ onStartDebate, isLoading }) {
   const [topic, setTopic] = useState('');
   const [userInteracted, setUserInteracted] = useState(false);
   const [maxTurns, setMaxTurns] = useState(20);
-  const [proposerModel, setProposerModel] = useState('openai/gpt-oss-120b');
-  const [opponentModel, setOpponentModel] = useState('deepseek/deepseek-r1-distill-llama-70b');
+  const [proposerModel, setProposerModel] = useState(DEFAULT_PROPOSER);
+  const [opponentModel, setOpponentModel] = useState(DEFAULT_OPPONENT);
   const [deriveLines, setDeriveLines] = useState([]);
   const [titleVisible, setTitleVisible] = useState(false);
 
-  const docketNo = useRef(String(docketCounter).padStart(4, '0'));
 
-  
   useEffect(() => {
     let idx = 0;
     const show = () => {
@@ -88,7 +48,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
     return () => clearTimeout(t);
   }, []);
 
-  
   useEffect(() => {
     if (userInteracted) return;
 
@@ -117,10 +76,10 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
 
         if (charIndex === currentTopic.length) {
           isDeleting = true;
-          timerId = setTimeout(typeStep, 2200); 
+          timerId = setTimeout(typeStep, 2200);
           return;
         }
-        timerId = setTimeout(typeStep, 45); 
+        timerId = setTimeout(typeStep, 45);
       }
     };
 
@@ -137,7 +96,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
   const handleInputFocus = () => {
     if (!userInteracted) {
       setUserInteracted(true);
-      setTopic(''); 
+      setTopic('');
     }
   };
 
@@ -161,14 +120,9 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
 
   return (
     <div className="anim-page-enter" style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
-      
-      <ArgumentGraph opacity={0.65} />
-
-      
       <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 20 }}>
         <ThemeSwitcher />
       </div>
-
       <div style={{ position: 'relative', zIndex: 10 }}>
         <div style={{
           minHeight: '100vh',
@@ -179,13 +133,9 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
           maxWidth: '1160px',
           margin: '0 auto',
         }}>
-
-          
           <div className="anim-fade-up" style={{ animationDelay: '0.08s', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 20 }}>
             Logic-verified argument coaching engine
           </div>
-
-          
           <div style={{ marginBottom: 12, minHeight: 64 }}>
             {deriveLines.map((line, i) => (
               <div key={i} className="derive-line show" style={{ animationDelay: `${i * 0.04}s` }}>
@@ -193,16 +143,15 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
               </div>
             ))}
           </div>
-
-          
           <h1
             className={`anim-title ${titleVisible ? 'reveal' : ''}`}
             style={{
-              fontFamily: 'var(--serif)',
-              fontWeight: 500,
-              fontSize: 'clamp(44px, 8.5vw, 100px)',
-              lineHeight: 0.96,
-              letterSpacing: '-0.015em',
+              fontFamily: 'var(--display)',
+              fontStyle: 'var(--display-style)',
+              fontWeight: 400,
+              fontSize: 'clamp(48px, 9vw, 112px)',
+              lineHeight: 0.95,
+              letterSpacing: '-0.02em',
               margin: '0 0 24px',
               maxWidth: 900,
               color: 'var(--ink-primary)',
@@ -210,8 +159,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
           >
             Agentic <em style={{ fontStyle: 'italic', color: 'var(--agent-b)' }}>Debate</em> Arena
           </h1>
-
-          
           <p
             className="anim-fade-up"
             style={{
@@ -226,9 +173,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
             Two autonomous debaters. A resolution engine that catches every contradiction.
             A search tree that picks each rebuttal on purpose — nothing said without reason.
           </p>
-
           <form onSubmit={handleSubmit}>
-            
             <div
               className="anim-fade-up docket-container"
               style={{ animationDelay: '0.6s', maxWidth: 640, marginBottom: 16, position: 'relative' }}
@@ -236,7 +181,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
                 Case topic
               </div>
-
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: 16 }}>
                 <input
                   type="text"
@@ -263,8 +207,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                   />
                 )}
               </div>
-
-              
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
@@ -283,17 +225,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                     value={proposerModel}
                     onChange={e => setProposerModel(e.target.value)}
                     disabled={isLoading}
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-elevated)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 4,
-                      padding: '6px 8px',
-                      fontFamily: 'var(--mono)',
-                      fontSize: 11,
-                      color: 'var(--ink-primary)',
-                      outline: 'none',
-                    }}
+                    className="docket-select"
                   >
                     {MODEL_GROUPS.map(group => (
                       <optgroup key={group.name} label={group.name}>
@@ -304,7 +236,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                     ))}
                   </select>
                 </div>
-
                 <div>
                   <label htmlFor="opponent-model-select" style={{ display: 'block', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--agent-b)', marginBottom: 4, textTransform: 'uppercase' }}>
                     Agent B (Opponent)
@@ -314,17 +245,7 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                     value={opponentModel}
                     onChange={e => setOpponentModel(e.target.value)}
                     disabled={isLoading}
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-elevated)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 4,
-                      padding: '6px 8px',
-                      fontFamily: 'var(--mono)',
-                      fontSize: 11,
-                      color: 'var(--ink-primary)',
-                      outline: 'none',
-                    }}
+                    className="docket-select"
                   >
                     {MODEL_GROUPS.map(group => (
                       <optgroup key={group.name} label={group.name}>
@@ -336,8 +257,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                   </select>
                 </div>
               </div>
-
-              
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -368,8 +287,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                 </select>
               </div>
             </div>
-
-            
             <div
               className="anim-fade-up"
               style={{
@@ -393,8 +310,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
                 </div>
               ))}
             </div>
-
-            
             <div className="anim-fade-up" style={{ animationDelay: '0.85s', display: 'flex', alignItems: 'center', gap: 14 }}>
               <button
                 type="submit"
@@ -412,8 +327,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
               )}
             </div>
           </form>
-
-          
           <div
             className="anim-fade-up"
             style={{
@@ -426,25 +339,6 @@ export default function TopicSetup({ onStartDebate, isLoading }) {
           >
             Unit IV — propositional resolution · Unit III — Monte Carlo tree search · Unit II — semantic retrieval
           </div>
-
-          
-          <div
-            className="anim-fade-up"
-            style={{
-              animationDelay: '1.08s',
-              marginTop: 24,
-              fontFamily: 'var(--mono)',
-              fontSize: 10,
-              color: 'var(--ink-faint)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span style={{ width: 22, height: 1, backgroundColor: 'var(--ink-faint)', display: 'inline-block' }} />
-            scroll to enter the arena
-          </div>
-
         </div>
       </div>
     </div>

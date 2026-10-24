@@ -1,30 +1,34 @@
-# Agentic Debate Arena: Logic-Verified Argument Coaching
+# Agentic Debate Arena — Backend
 
-> A course project for **Foundations of AI** — multi-unit syllabus integration using
-> propositional resolution (Unit IV), MCTS (Unit III), semantic search (Unit II),
-> and Knowledge-Based Agent architecture (Units I & IV), wrapped in an agentic LLM
-> orchestration layer.
+FastAPI service for the debate arena: propositional resolution (Unit IV), MCTS
+rebuttal selection (Unit III), semantic fact retrieval (Unit II) and per-agent
+TELL/ASK knowledge bases (Units I & IV), orchestrated by LLM debater agents.
+
+See the [root README](../README.md) for the full overview and the one-command launcher.
 
 ## Setup
 
 ```bash
-# Backend
 cd backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then add your API keys
-
-# Frontend (Phase 7+)
-cd frontend
-npm install
-npm run dev
 ```
 
-## Project structure
+Create `backend/.env` with any of `GROQ_API_KEY`, `GEMINI_API_KEY`, `NVIDIA_API_KEY`,
+`OPENROUTER_API_KEY`. With no keys, agents run in deterministic fallback mode
+(MCTS and resolution still execute; only phrasing is templated).
 
-See `project_structure_prompt.md` in the project root for the full spec.
+## Run
 
-## Build phases
+```bash
+uvicorn main:app --app-dir app --reload --port 8000
+```
 
-See `PROJECT_STATE.md` for current progress and handoff protocol.
+## Test
+
+```bash
+pytest
+```
+
+Tests run offline: `tests/conftest.py` replaces every LLM call with a deterministic fake.

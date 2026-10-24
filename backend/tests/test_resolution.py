@@ -338,3 +338,30 @@ class TestEdgeCases:
         r_a = check_contradiction(kb_a)
         r_b = check_contradiction(kb_b)
         assert r_a.found == r_b.found
+
+
+class TestParsePropositionalForm:
+    def test_negated_consequent_is_a_literal(self):
+        from core.resolution import parse_propositional_form
+        assert parse_propositional_form("A → ¬B") == frozenset({("NOT", "A"), ("NOT", "B")})
+
+    def test_negated_antecedent(self):
+        from core.resolution import parse_propositional_form
+        assert parse_propositional_form("¬A -> B") == frozenset({"A", "B"})
+
+    def test_disjunction(self):
+        from core.resolution import parse_propositional_form
+        assert parse_propositional_form("A ∨ ¬B") == frozenset({"A", ("NOT", "B")})
+
+    def test_negated_implication_parts_resolve_to_contradiction(self):
+        from core.resolution import parse_propositional_form
+        kb = [parse_propositional_form(f) for f in ("A → ¬B", "A", "B")]
+        assert check_contradiction(kb).found is True
+
+    def test_invalid_atom_rejected(self):
+        from core.resolution import parse_propositional_form
+        assert parse_propositional_form("A → two words") is None
+
+    def test_atoms_of(self):
+        from core.resolution import atoms_of, parse_propositional_form
+        assert atoms_of(parse_propositional_form("A → ¬B")) == {"A", "B"}

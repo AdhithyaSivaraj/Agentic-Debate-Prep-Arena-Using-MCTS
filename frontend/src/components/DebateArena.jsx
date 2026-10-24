@@ -1,355 +1,313 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ArgumentGraph from './ArgumentGraph';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { ChevronRight, Play, Pause, ArrowDownToLine, Scale, RotateCcw, AlertTriangle, Zap, Check } from 'lucide-react';
 import TopicSetup from './TopicSetup';
+import ThemeSwitcher from './ThemeSwitcher';
 import DebateSummaryModal from './DebateSummaryModal';
-import DebateSummarizingOverlay from './DebateSummarizingOverlay';
-import DebateInitializingOverlay from './DebateInitializingOverlay';
+import WorkingOverlay from './WorkingOverlay';
 import StatusRing from './StatusRing';
 import { startDebate, nextTurn, getTranscript, getDebateSummary } from '../lib/api';
+import { formatModelName } from '../lib/models';
 
 
-function useRevealOnScroll() {
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); }),
-      { threshold: 0.12 }
-    );
-    const els = document.querySelectorAll('.reveal-item');
-    els.forEach(el => observer.observe(el));
-    return () => observer.disconnect();
-  });
-}
-
-function formatModelName(modelStr) {
-  if (!modelStr) return 'AI Agent';
-  if (modelStr.includes('versatile')) return 'Llama 3.3 70B (Groq LPU)';
-  if (modelStr.includes('instant')) return 'Llama 3.1 8B (Groq LPU)';
-  if (modelStr.includes('llama-3.1-8b')) return 'Llama 3.1 8B (NVIDIA)';
-  if (modelStr.includes('nemotron-super-49b')) return 'Nemotron Super 49B (NVIDIA)';
-  if (modelStr.includes('llama-3.3')) return 'Llama 3.3 70B (NVIDIA)';
-  if (modelStr.includes('llama-3.1-70b')) return 'Llama 3.1 70B (NVIDIA)';
-  if (modelStr.includes('deepseek')) return 'DeepSeek R1 (NVIDIA)';
-  if (modelStr.includes('3.6')) return 'Gemini 3.6 Flash';
-  if (modelStr.includes('3.5')) return 'Gemini 3.5 Flash';
-  if (modelStr.includes('3.1')) return 'Gemini 3.1 Flash Lite';
-  return modelStr.split('/').pop();
+// Points come only from resolution proofs: a refutation scores for the speaker,
+// a self-contradiction scores for the other side.
+function scoreOf(turns) {
+  const s = { aRefutes: 0, aSelf: 0, bRefutes: 0, bSelf: 0 };
+  for (const t of turns) {
+    const isA = t.claim.speaker === 'agent_a';
+    if (t.claim.refutes_opponent) s[isA ? 'aRefutes' : 'bRefutes'] += 1;
+    if (t.claim.is_contradicted) s[isA ? 'aSelf' : 'bSelf'] += 1;
+  }
+  s.a = s.aRefutes + s.bSelf;
+  s.b = s.bRefutes + s.aSelf;
+  s.net = s.a - s.b;
+  return s;
 }
 
 
-function ClaimEntry({ turn, isAgentA, isLatest = false, modelName = '', entryRef = null, autoScroll = true }) {
-  const contradicted = turn.contradiction_result?.found;
-  const propForm     = turn.claim?.propositional_form;
+function Scoreboard({ turns }) {
+  const s = scoreOf(turns);
+  const position = 50 + Math.max(-46, Math.min(46, s.net * 12));
+  const net = s.net === 0 ? 'even' : s.net > 0 ? `A +${s.net}` : `B +${-s.net}`;
+  return (
+    <div className="scoreboard" title="Refutations proven by resolution (self-contradictions count for the other side)">
+      <span className="side a">A · {s.aRefutes} refuted{s.aSelf ? ` · ${s.aSelf} self` : ''}</span>
+      <div className="scorebar" aria-hidden="true">
+        <span className="fill-a" style={{ width: `${position}%` }} />
+        <span className="fill-b" style={{ width: `${100 - position}%` }} />
+        <span className="mid" />
+      </div>
+      <span className="side b">B · {s.bRefutes} refuted{s.bSelf ? ` · ${s.bSelf} self` : ''}</span>
+      <span className="score-net">{net}</span>
+    </div>
+  );
+}
+
+
+function TurnBadges({ turn, onJump }) {
+  const { is_contradicted: self, refutes_opponent: refutes, refutes_turn: target } = turn.claim;
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      {turn.mode === 'fallback' && (
+        <span className="badge-status muted" title="LLM unavailable: candidates came from the generated fact base">fallback</span>
+      )}
+      {self && <span className="badge-status contra"><AlertTriangle size={11} /> self-contradiction</span>}
+      {refutes && target && (
+        <button className="refute-link" onClick={() => onJump(target)} title={`Jump to turn ${target}`}>
+          <Zap size={11} /> refutes turn {target}
+        </button>
+      )}
+      {refutes && !target && <span className="badge-status refute"><Zap size={11} /> refutes opponent</span>}
+      {!self && !refutes && <span className="badge-status valid"><Check size={11} /> consistent</span>}
+    </span>
+  );
+}
+
+
+function ClaimEntry({ turn, isLatest, modelName, registerRow, onJump, onHover, flash, linked }) {
+  const isA = turn.claim.speaker === 'agent_a';
+  const agent = isA ? 'a' : 'b';
+  const fullText = turn.claim.text || '';
 
   const [ringState, setRingState] = useState(() => (isLatest ? 'thinking' : 'done'));
-  const [displayedText, setDisplayedText] = useState(() => (isLatest ? '' : turn.claim.text));
-  const [showMeta, setShowMeta] = useState(() => !isLatest);
+  const [shown, setShown] = useState(() => (isLatest ? 0 : fullText.length));
+  const ringLg = useRef(null);
+  const ringSm = useRef(null);
 
-  const ringRefLg = useRef(null);
-  const ringRefSm = useRef(null);
-
-  const pulseBothRings = () => {
-    ringRefLg.current?.pulse();
-    ringRefSm.current?.pulse();
-  };
-
-  
-  useEffect(() => {
-    if (!isLatest || !autoScroll || !entryRef?.current) return;
-
-    const element = entryRef.current;
-    const observer = new ResizeObserver(() => {
-      element.scrollIntoView({ behavior: 'auto', block: 'center' });
-    });
-
-    observer.observe(element);
-    element.scrollIntoView({ behavior: 'auto', block: 'center' });
-
-    return () => observer.disconnect();
-  }, [isLatest, autoScroll, entryRef]);
-
+  // Brief typewriter for the newest claim (about one second, independent of length).
   useEffect(() => {
     if (!isLatest) {
       setRingState('done');
-      setDisplayedText(turn.claim.text);
-      setShowMeta(true);
+      setShown(fullText.length);
       return;
     }
-
-    let isMounted = true;
-    let charIdx = 0;
-    const fullText = turn.claim.text || '';
-    const stepDelay = Math.max(12, Math.min(22, Math.floor(2200 / (fullText.length || 1))));
-
-    
+    let alive = true;
+    let typer;
     setRingState('thinking');
-    setShowMeta(false);
-
-    const thinkingTimer = setTimeout(() => {
-      if (!isMounted) return;
-
-      
+    setShown(0);
+    const step = Math.max(1, Math.ceil(fullText.length / 65));
+    const start = setTimeout(() => {
+      if (!alive) return;
       setRingState('speaking');
-
-      const typeInterval = setInterval(() => {
-        if (!isMounted) {
-          clearInterval(typeInterval);
-          return;
+      let n = 0;
+      typer = setInterval(() => {
+        n = Math.min(fullText.length, n + step);
+        setShown(n);
+        if (n % (step * 6) === 0) { ringLg.current?.pulse(); ringSm.current?.pulse(); }
+        if (n >= fullText.length) {
+          clearInterval(typer);
+          setTimeout(() => alive && setRingState('done'), 150);
         }
+      }, 16);
+    }, 250);
+    return () => { alive = false; clearTimeout(start); clearInterval(typer); };
+  }, [fullText, isLatest]);
 
-        charIdx += 1;
-        setDisplayedText(fullText.substring(0, charIdx));
-
-        if (charIdx % 8 === 0 || charIdx >= fullText.length) {
-          pulseBothRings();
-        }
-
-        if (charIdx >= fullText.length) {
-          clearInterval(typeInterval);
-
-          
-          setTimeout(() => {
-            if (isMounted) {
-              setRingState('done');
-              setShowMeta(true);
-            }
-          }, 200);
-        }
-      }, stepDelay);
-    }, 400);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(thinkingTimer);
-    };
-  }, [turn.claim.text, isLatest]);
-
+  const done = ringState === 'done';
   return (
     <div
-      ref={entryRef}
-      className="reveal-item in"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 40px 1fr',
-        alignItems: 'start',
-        marginBottom: 28,
-        scrollMarginTop: '160px',
-      }}
+      className="turn-row"
+      data-agent={agent}
+      id={`turn-${turn.turn_number}`}
+      ref={el => registerRow(turn.turn_number, el)}
+      onMouseEnter={() => onHover(turn.turn_number)}
+      onMouseLeave={() => onHover(null)}
     >
-      {isAgentA ? (
-        <>
-          
-          <div style={{ gridColumn: 1, justifySelf: 'end' }}>
-            <div className="turn-frame" data-agent="a" data-state={ringState}>
-              <div className="turn-panel">
-                <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <StatusRing ref={ringRefLg} size="lg" state={ringState} agent="a" />
-                    <span className="who badge-agent-a">Agent A — Proposer</span>
-                  </div>
-                  <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: 'var(--mono)' }}>
-                    {formatModelName(modelName)}
-                  </span>
-                </div>
-                <p style={{
-                  fontFamily: 'var(--serif)',
-                  fontSize: 16,
-                  lineHeight: 1.55,
-                  margin: 0,
-                  color: contradicted ? 'var(--contra)' : 'var(--ink-primary)',
-                }}>
-                  {displayedText}
-                  {ringState === 'speaking' && (
-                    <span style={{ display: 'inline-block', width: 2, height: 16, backgroundColor: 'var(--agent-a)', marginLeft: 2, animation: 'livePulse 0.6s infinite' }} />
-                  )}
-                </p>
-                {showMeta && (
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: 12,
-                    paddingTop: 8,
-                    borderTop: '1px dashed var(--border)',
-                    fontFamily: 'var(--mono)',
-                    fontSize: 10,
-                    animation: 'fadeUp 0.3s ease forwards',
-                  }}>
-                    {propForm && (
-                      <span style={{ color: 'var(--ink-faint)' }}>∴ {propForm}</span>
-                    )}
-                    <span className={`badge-status ${contradicted ? 'contra' : 'valid'}`}>
-                      {contradicted ? '⚡ contradiction' : '✓ consistent'}
-                    </span>
-                  </div>
-                )}
-              </div>
+      <div className="card-slot">
+        <article className={`turn-card ${flash ? 'flash' : ''} ${linked ? 'linked' : ''}`} data-agent={agent} data-state={ringState}>
+          <header className="turn-head">
+            <div className="turn-who">
+              <StatusRing ref={ringLg} size="lg" state={ringState} agent={agent} />
+              <span className={isA ? 'badge-agent-a' : 'badge-agent-b'}>
+                {isA ? 'A · Proposer' : 'B · Opponent'} <span style={{ color: 'var(--ink-faint)' }}>#{turn.turn_number}</span>
+              </span>
             </div>
-          </div>
-
-          
-          <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22, position: 'relative', zIndex: 2 }}>
-            <StatusRing ref={ringRefSm} size="sm" state={ringState} agent="a" className="turn-node" />
-          </div>
-          <div style={{ gridColumn: 3 }} />
-        </>
-      ) : (
-        <>
-          
-          <div style={{ gridColumn: 1 }} />
-          
-          <div style={{ gridColumn: 2, display: 'flex', justifyContent: 'center', paddingTop: 22, position: 'relative', zIndex: 2 }}>
-            <StatusRing ref={ringRefSm} size="sm" state={ringState} agent="b" className="turn-node" />
-          </div>
-          <div style={{ gridColumn: 3, justifySelf: 'start' }}>
-            <div className="turn-frame" data-agent="b" data-state={ringState}>
-              <div className="turn-panel">
-                <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <StatusRing ref={ringRefLg} size="lg" state={ringState} agent="b" />
-                    <span className="who badge-agent-b">Agent B — Opponent</span>
-                  </div>
-                  <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: 'var(--mono)' }}>
-                    {formatModelName(modelName)}
-                  </span>
-                </div>
-                <p style={{
-                  fontFamily: 'var(--serif)',
-                  fontSize: 16,
-                  lineHeight: 1.55,
-                  margin: 0,
-                  color: contradicted ? 'var(--contra)' : 'var(--ink-primary)',
-                }}>
-                  {displayedText}
-                  {ringState === 'speaking' && (
-                    <span style={{ display: 'inline-block', width: 2, height: 16, backgroundColor: 'var(--agent-b)', marginLeft: 2, animation: 'livePulse 0.6s infinite' }} />
-                  )}
-                </p>
-                {showMeta && (
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: 12,
-                    paddingTop: 8,
-                    borderTop: '1px dashed var(--border)',
-                    fontFamily: 'var(--mono)',
-                    fontSize: 10,
-                    animation: 'fadeUp 0.3s ease forwards',
-                  }}>
-                    <span className={`badge-status ${contradicted ? 'contra' : 'valid'}`}>
-                      {contradicted ? '⚡ contradiction' : '✓ consistent'}
-                    </span>
-                    {propForm && (
-                      <span style={{ color: 'var(--ink-faint)' }}>∴ {propForm}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-
-function ContraEntry({ turn }) {
-  const pairs = turn.contradiction_result?.conflicting_clauses || [];
-  return (
-    <div
-      className="reveal-item"
-      style={{ display: 'grid', gridTemplateColumns: '1fr', justifyItems: 'center', margin: '48px 0' }}
-    >
-      <div className="contra-card" style={{ maxWidth: 520, width: '100%', textAlign: 'center' }}>
-        <div className="contra-stamp">Proven ⚡</div>
-        <div style={{ marginTop: 20 }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--contra)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-            Contradiction — resolution refutation
-          </div>
-          <p style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--ink-secondary)', margin: '0 0 14px' }}>
-            This claim conflicts directly with an earlier position held in the knowledge base.
-            The resolution algorithm derived the empty clause (⊥) — a formal proof of contradiction.
+            <span className="turn-model">{formatModelName(modelName)}</span>
+          </header>
+          <p className="turn-text">
+            {fullText.slice(0, shown)}
+            {ringState === 'speaking' && <span className="cursor" />}
           </p>
-          {pairs[0] && (
-            <span className="logic-code">
-              {pairs[0][0]} &nbsp;∧&nbsp; {pairs[0][1]}
-            </span>
+          {done && (
+            <footer className="turn-foot">
+              <span className="turn-form">
+                {turn.claim.issue && <span className="issue-tag">{turn.claim.issue}</span>}
+                ∴ {turn.claim.propositional_form}
+              </span>
+              <TurnBadges turn={turn} onJump={onJump} />
+            </footer>
           )}
-        </div>
+        </article>
+      </div>
+      <div className="node">
+        <StatusRing ref={ringSm} size="sm" state={ringState} agent={agent} />
       </div>
     </div>
   );
 }
 
 
-function MctsEntry({ mctsTrace, turnNumber }) {
-  if (!mctsTrace) return null;
-  const chosen   = mctsTrace.chosen_rebuttal;
-  const rejected = mctsTrace.rejected_candidates || [];
-  const nSims    = mctsTrace.n_simulations || 10;
-
+function JumpLink({ n, onJump }) {
   return (
-    <div
-      className="reveal-item"
-      style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 20, marginBottom: 28 }}
-    >
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-        How this rebuttal was chosen — MCTS trace, turn {turnNumber} ({nSims} simulations)
+    <button onClick={() => onJump(n)} style={{ background: 'none', border: 'none', padding: 0, color: 'inherit', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>
+      turn {n}
+    </button>
+  );
+}
+
+
+function ProofEntry({ turn, onJump }) {
+  const isSelf = turn.claim.is_contradicted;
+  const result = isSelf ? turn.contradiction_result : turn.clash_result;
+  const pair = result?.conflicting_clauses?.[0];
+  const target = isSelf ? turn.claim.contradicts_turn : turn.claim.refutes_turn;
+  const speakerColor = turn.claim.speaker === 'agent_a' ? 'var(--agent-a)' : 'var(--agent-b)';
+  return (
+    <div className="proof-row">
+      <div className={`contra-card ${isSelf ? '' : 'refutation'}`} style={{ '--speaker-color': speakerColor }}>
+        <div className="contra-stamp">{isSelf ? 'Self-contradiction' : 'Refuted'}</div>
+        <div className="proof-label">Resolution proof · turn {turn.turn_number}</div>
+        <p style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink-secondary)', margin: '0 0 14px' }}>
+          {isSelf
+            ? <>This claim contradicts the speaker's own position{target ? <> from <JumpLink n={target} onJump={onJump} /></> : ''}.</>
+            : <>This claim contradicts what the opponent argued{target ? <> in <JumpLink n={target} onJump={onJump} /></> : ''}, read together with their evidence.</>}
+          {' '}Resolution derived the empty clause (⊥).
+        </p>
+        {pair && <span className="logic-code">{pair[0]} &nbsp;+&nbsp; {pair[1]} &nbsp;⊢&nbsp; ⊥</span>}
       </div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        
-        <div className="mcts-cand winner">
-          <div style={{ fontSize: 13, color: 'var(--ink-primary)', lineHeight: 1.55, marginBottom: 6 }}>{chosen}</div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--valid)', fontWeight: 600 }}>
-            score 0.78 — selected (highest visits)
-          </div>
-        </div>
-        
-        {rejected.map((c, i) => (
-          <div key={i} className="mcts-cand" style={{ opacity: 0.5 }}>
-            <div style={{ fontSize: 13, color: 'var(--ink-secondary)', lineHeight: 1.55, marginBottom: 6 }}>{c.text}</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--ink-faint)' }}>
-              score {c.score} · {c.visit_count}v
+    </div>
+  );
+}
+
+
+function MctsEntry({ trace, turnNumber }) {
+  if (!trace) return null;
+  const rows = [
+    { text: trace.chosen_rebuttal, form: trace.chosen_propositional_form, score: trace.chosen_score, visits: trace.chosen_visits, winner: true },
+    ...(trace.rejected_candidates || []).map(c => ({ text: c.text, form: c.propositional_form, score: c.score, visits: c.visit_count })),
+  ];
+  const scores = rows.map(r => r.score);
+  const lo = Math.min(...scores, 0);
+  const hi = Math.max(...scores, lo + 1);
+  return (
+    <details className="mcts">
+      <summary>
+        <ChevronRight size={12} className="chev" />
+        How turn {turnNumber} was chosen — MCTS over {rows.length} candidates, {trace.n_simulations} simulations
+      </summary>
+      <div className="mcts-rows">
+        {rows.map((r, i) => (
+          <div key={i} className={`mcts-row ${r.winner ? 'winner' : ''}`}>
+            <div>
+              {r.text}
+              {r.form && <span className="form">∴ {r.form}</span>}
             </div>
+            <div className="mcts-bar"><span style={{ width: `${((r.score - lo) / (hi - lo)) * 100}%` }} /></div>
+            <div className="mcts-num">{r.score.toFixed(2)}<br /><span style={{ color: 'var(--ink-faint)' }}>{r.visits}v</span></div>
           </div>
         ))}
       </div>
-    </div>
+    </details>
+  );
+}
+
+
+// Bracket arcs on the spine, from each refutation (or self-contradiction) to the turn it targets.
+function LinkArcs({ turns, rowsRef, containerRef, hovered }) {
+  const [paths, setPaths] = useState([]);
+
+  const measure = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const x = container.clientWidth / 2;
+    const yOf = n => {
+      const row = rowsRef.current.get(n);
+      return row ? row.offsetTop + 28 : null;
+    };
+    const next = [];
+    for (const t of turns) {
+      const isA = t.claim.speaker === 'agent_a';
+      const target = t.claim.refutes_opponent ? t.claim.refutes_turn : t.claim.is_contradicted ? t.claim.contradicts_turn : null;
+      if (!target) continue;
+      const y1 = yOf(t.turn_number);
+      const y2 = yOf(target);
+      if (y1 == null || y2 == null) continue;
+      const dx = (isA ? -1 : 1) * Math.min(30, 14 + (y1 - y2) / 60);
+      next.push({
+        key: `${t.turn_number}-${target}`,
+        from: t.turn_number,
+        to: target,
+        d: `M ${x} ${y1} C ${x + dx * 1.6} ${y1}, ${x + dx * 1.6} ${y2}, ${x} ${y2}`,
+        end: { x, y: y2 },
+        len: Math.abs(y1 - y2) + Math.abs(dx) * 4,
+        color: t.claim.is_contradicted ? 'var(--contra)' : isA ? 'var(--agent-a)' : 'var(--agent-b)',
+      });
+    }
+    setPaths(next);
+  }, [turns, rowsRef, containerRef]);
+
+  useLayoutEffect(() => {
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [measure, containerRef]);
+
+  return (
+    <svg className="arcs" aria-hidden="true">
+      {paths.map(p => {
+        const state = hovered == null ? '' : hovered === p.from || hovered === p.to ? 'hot' : 'dim';
+        return (
+          <g key={p.key}>
+            <path d={p.d} className={state} stroke={p.color} style={{ '--len': p.len }} />
+            <circle cx={p.end.x} cy={p.end.y} r={state === 'hot' ? 5 : 3.5} fill={p.color} opacity={state === 'dim' ? 0.2 : 0.9} />
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
 
 export default function DebateArena() {
-  const [session,           setSession]           = useState(null);
-  const [isLoading,         setIsLoading]         = useState(false);
-  const [isNextTurnLoading, setIsNextTurnLoading] = useState(false);
-  const [isSummarizing,     setIsSummarizing]     = useState(false);
+  const [session,            setSession]            = useState(null);
+  const [isLoading,          setIsLoading]          = useState(false);
+  const [isNextTurnLoading,  setIsNextTurnLoading]  = useState(false);
+  const [isSummarizing,      setIsSummarizing]      = useState(false);
   const [summarizeCountdown, setSummarizeCountdown] = useState(0);
-  const [isInitializing,    setIsInitializing]    = useState(false);
-  const [initTopic,         setInitTopic]         = useState('');
-  const [initProposerModel, setInitProposerModel] = useState('');
-  const [initOpponentModel, setInitOpponentModel] = useState('');
-  const [initMaxTurns,      setInitMaxTurns]      = useState(20);
-  const [autoPlay,          setAutoPlay]          = useState(false);
-  const [autoScroll,        setAutoScroll]        = useState(true);
-  const [activeSummary,     setActiveSummary]     = useState(null);
-  const [showSetup,         setShowSetup]         = useState(true);
+  const [pending,            setPending]            = useState(null);
+  const [autoPlay,           setAutoPlay]           = useState(false);
+  const [autoScroll,         setAutoScroll]         = useState(true);
+  const [activeSummary,      setActiveSummary]      = useState(null);
+  const [hovered,            setHovered]            = useState(null);
+  const [flashTurn,          setFlashTurn]          = useState(null);
 
-  
   const autoPlayRef = useRef(false);
-  const lastTurnRef = useRef(null);
+  const rowsRef     = useRef(new Map());
+  const timelineRef = useRef(null);
 
-  useRevealOnScroll();
+  const turns    = session?.turns || [];
+  const maxTurns = session?.max_turns || 20;
 
-  
+  const registerRow = useCallback((n, el) => {
+    if (el) rowsRef.current.set(n, el); else rowsRef.current.delete(n);
+  }, []);
+
+  const jumpTo = useCallback(n => {
+    const row = rowsRef.current.get(n);
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashTurn(n);
+    setTimeout(() => setFlashTurn(f => (f === n ? null : f)), 1500);
+  }, []);
+
+  // Keep the newest turn in view.
   useEffect(() => {
-    if (autoScroll && lastTurnRef.current && session?.turns?.length > 0) {
-      lastTurnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [session?.turns?.length, autoScroll]);
+    if (!autoScroll || turns.length === 0) return;
+    rowsRef.current.get(turns[turns.length - 1].turn_number)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [turns.length, autoScroll]);
 
-  // Countdown effect to allow user to comfortably read opposer's last point before loading screen
+  // Short pause after the final turn so the closing claim can be read.
   useEffect(() => {
     if (summarizeCountdown <= 0) return;
     const t = setTimeout(() => {
@@ -357,354 +315,201 @@ export default function DebateArena() {
         setSummarizeCountdown(0);
         handleFetchSummary();
       } else {
-        setSummarizeCountdown(prev => prev - 1);
+        setSummarizeCountdown(c => c - 1);
       }
     }, 1000);
-
     return () => clearTimeout(t);
   }, [summarizeCountdown]);
 
-  // Auto-play timer effect
+  // Auto-run.
   useEffect(() => {
     autoPlayRef.current = autoPlay;
-    let timer;
-
-    if (autoPlay && session && !isNextTurnLoading && !activeSummary && !isSummarizing) {
-      const maxTurns = session.max_turns || 20;
-      if ((session.turns || []).length >= maxTurns || session.status === 'complete') {
-        autoPlayRef.current = false;
+    if (!autoPlay || !session || isNextTurnLoading || activeSummary || isSummarizing) return;
+    const finished = turns.length >= maxTurns || session.status === 'complete';
+    const timer = setTimeout(() => {
+      if (finished) {
         setAutoPlay(false);
-        timer = setTimeout(() => {
-          handleFetchSummary();
-        }, 1200);
-      } else {
-        timer = setTimeout(() => {
-          if (autoPlayRef.current) {
-            handleNextTurn();
-          }
-        }, 2500);
+        handleFetchSummary();
+      } else if (autoPlayRef.current) {
+        handleNextTurn();
       }
-    }
-
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
+    }, finished ? 1200 : 2200);
+    return () => clearTimeout(timer);
   }, [autoPlay, session, isNextTurnLoading, activeSummary, isSummarizing]);
 
-  const toggleAutoPlay = () => {
-    setAutoPlay(prev => {
-      const next = !prev;
-      autoPlayRef.current = next;
-      return next;
-    });
-  };
-
-  const handleStartDebate = async (topic, maxTurns = 20, proposerModel, opponentModel) => {
-    setInitTopic(topic);
-    setInitMaxTurns(maxTurns);
-    setInitProposerModel(proposerModel);
-    setInitOpponentModel(opponentModel);
-    setIsInitializing(true);
+  const handleStartDebate = async (topic, max, proposerModel, opponentModel) => {
+    setPending({ topic, proposerModel, opponentModel });
     setIsLoading(true);
     try {
-      const res      = await startDebate(topic, maxTurns, proposerModel, opponentModel);
-      const sessData = await getTranscript(res.debate_id);
-      setSession(sessData);
-      setTimeout(() => {
-        setIsInitializing(false);
-        setShowSetup(false);
-      }, 700);
+      const res = await startDebate(topic, max, proposerModel, opponentModel);
+      setSession(await getTranscript(res.debate_id));
     } catch (err) {
       alert(`Failed to start debate: ${err.message}`);
-      setIsInitializing(false);
     } finally {
       setIsLoading(false);
+      setPending(null);
     }
   };
 
   const handleNextTurn = async () => {
     if (!session || isNextTurnLoading || isSummarizing || activeSummary || session.status === 'complete') return;
-    const maxTurns = session.max_turns || 20;
-    if ((session.turns || []).length >= maxTurns) {
-      autoPlayRef.current = false;
+    if (turns.length >= maxTurns) {
       setAutoPlay(false);
       handleFetchSummary();
       return;
     }
-
     setIsNextTurnLoading(true);
     try {
       await nextTurn(session.debate_id);
       const updated = await getTranscript(session.debate_id);
-
-      // ALWAYS update session state first so the newly arrived turn (e.g. Agent B on turn 6) renders immediately on screen!
       setSession(updated);
-
-      const newTurnsCount = (updated.turns || []).length;
-      const isFinished = newTurnsCount >= maxTurns || updated.status === 'complete';
-
-      if (isFinished) {
-        autoPlayRef.current = false;
+      if ((updated.turns || []).length >= maxTurns || updated.status === 'complete') {
         setAutoPlay(false);
-        // Start 4-second countdown so user can comfortably read opposer's closing argument
         setSummarizeCountdown(4);
       }
     } catch (err) {
       alert(`Failed to advance turn: ${err.message}`);
-      autoPlayRef.current = false;
       setAutoPlay(false);
     } finally {
       setIsNextTurnLoading(false);
     }
   };
 
-  const handleFetchSummary = async (debateId) => {
+  const handleFetchSummary = async () => {
     setSummarizeCountdown(0);
-    autoPlayRef.current = false;
     setAutoPlay(false);
-    const dId = debateId || session?.debate_id;
-    if (!dId) return;
-
+    const id = session?.debate_id;
+    if (!id) return;
     setIsSummarizing(true);
     try {
-      const data = await getDebateSummary(dId);
-      setIsSummarizing(false);
+      const data = await getDebateSummary(id);
       setActiveSummary(data);
-
-      const updatedSess = await getTranscript(dId);
-      setSession(updatedSess);
+      setSession(await getTranscript(id));
     } catch (err) {
-      setIsSummarizing(false);
       alert(`Failed to load summary: ${err.message}`);
+    } finally {
+      setIsSummarizing(false);
     }
   };
 
   const handleReset = () => {
-    autoPlayRef.current = false;
     setAutoPlay(false);
     setSummarizeCountdown(0);
-    setIsInitializing(false);
     setIsSummarizing(false);
     setSession(null);
     setActiveSummary(null);
-    setShowSetup(true);
+    rowsRef.current.clear();
   };
 
-  if (showSetup) {
+  if (!session) {
     return (
       <div className="anim-page-enter">
         <TopicSetup onStartDebate={handleStartDebate} isLoading={isLoading} />
-        {isInitializing && (
-          <DebateInitializingOverlay
-            topic={initTopic}
-            maxTurns={initMaxTurns}
-            proposerModel={initProposerModel}
-            opponentModel={initOpponentModel}
+        {pending && (
+          <WorkingOverlay
+            kicker="Opening the docket"
+            title="Building the fact base"
+            topic={pending.topic}
+            now="Framing the two sides, then generating ~20 facts with logical forms"
+            note={`Agent A: ${formatModelName(pending.proposerModel)} · Agent B: ${formatModelName(pending.opponentModel)}. Each side's facts then seed its knowledge base. Usually 5–25 s.`}
           />
         )}
       </div>
     );
   }
 
-  const turns      = session?.turns || [];
-  const maxTurns   = session?.max_turns || 20;
-  const isComplete = turns.length >= maxTurns || session?.status === 'complete';
-  const turnNum    = turns.length;
-
-  const propModelName = session?.proposer_model || 'gemini-3.6-flash';
-  const oppModelName  = session?.opponent_model || 'gemini-3.6-flash';
+  const isComplete = turns.length >= maxTurns || session.status === 'complete';
+  const linkedTo = new Set();
+  if (hovered != null) {
+    for (const t of turns) {
+      const target = t.claim.refutes_turn ?? t.claim.contradicts_turn;
+      if (!target) continue;
+      if (t.turn_number === hovered) linkedTo.add(target);
+      if (target === hovered) linkedTo.add(t.turn_number);
+    }
+  }
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
-      <ArgumentGraph opacity={0.35} />
-
-      
-      <header style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 40,
-        backgroundColor: 'var(--bg-main)',
-        borderBottom: '1px solid var(--border)',
-        padding: '0 48px',
-      }}>
-        <div style={{
-          maxWidth: 1180,
-          margin: '0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-          padding: '16px 0 12px',
-          flexWrap: 'wrap',
-          gap: 12,
-        }}>
+      <header className="arena-header">
+        <div className="arena-header-inner">
           <div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Turn {turnNum} of {maxTurns}{isComplete ? ' (complete)' : ''}
-            </div>
-            <div style={{ fontFamily: 'var(--serif)', fontWeight: 500, fontSize: 'clamp(18px, 2.5vw, 26px)', color: 'var(--ink-primary)', maxWidth: 640 }}>
-              {session?.topic}
-            </div>
+            <div className="arena-meta">Turn {turns.length} of {maxTurns}{isComplete ? ' · complete' : ''}</div>
+            <div className="arena-topic">{session.topic}</div>
+            {session.proposer_position && (
+              <div className="arena-positions">
+                <span className="pos a"><b>A</b> {session.proposer_position}</span>
+                <span className="pos b"><b>B</b> {session.opponent_position}</span>
+              </div>
+            )}
           </div>
-
-          <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-            
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <button
-                id="next-turn-btn"
-                className="btn-action"
-                onClick={handleNextTurn}
-                disabled={isNextTurnLoading || isComplete}
-                style={{ padding: '9px 24px', fontSize: 13.5, fontWeight: 600 }}
-              >
-                {isNextTurnLoading
-                  ? (turns.length + 1 >= maxTurns ? 'Reasoning Final Turn…' : 'Reasoning…')
-                  : 'Next Turn →'}
-              </button>
-
-              <button
-                id="autoplay-btn"
-                className={`btn-outline ${autoPlay ? 'active' : ''}`}
-                onClick={toggleAutoPlay}
-                disabled={isComplete}
-                style={{ padding: '9px 20px', fontSize: 13.5, minWidth: 110, justifyContent: 'center' }}
-              >
-                {autoPlay ? '⏸ Pause' : '▶ Auto-Run'}
-              </button>
-
-              <button
-                id="autoscroll-btn"
-                className={`btn-outline ${autoScroll ? 'active' : ''}`}
-                onClick={() => setAutoScroll(prev => !prev)}
-                title="Auto-scroll to keep latest response centered"
-                style={{ padding: '9px 16px', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <span>📜</span> {autoScroll ? 'Auto-Scroll: ON' : 'Auto-Scroll: OFF'}
-              </button>
-            </div>
-
-            <div style={{ width: 1, height: 24, backgroundColor: 'var(--border)' }} />
-
-            
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <button
-                id="verdict-btn"
-                className={`btn-outline ${isComplete ? 'active' : ''}`}
-                onClick={() => {
-                  if (session?.summary) {
-                    setActiveSummary(session.summary);
-                  } else {
-                    handleFetchSummary();
-                  }
-                }}
-                disabled={isSummarizing}
-                style={{ padding: '9px 20px', fontSize: 13.5 }}
-              >
-                {isSummarizing ? '⚖️ Summarizing…' : isComplete ? '🏆 View Verdict' : '🏆 Verdict'}
-              </button>
-
-              <button
-                id="reset-btn"
-                className="btn-outline"
-                onClick={handleReset}
-                title="Start a new debate"
-                style={{ padding: '9px 18px', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <span>↩</span> New Debate
-              </button>
-            </div>
+          <div className="arena-actions">
+            <button id="next-turn-btn" className="btn-action" onClick={handleNextTurn} disabled={isNextTurnLoading || isComplete}>
+              {isNextTurnLoading ? 'Reasoning…' : 'Next turn'} <ChevronRight size={15} />
+            </button>
+            <button id="autoplay-btn" className={`btn-icon ${autoPlay ? 'active' : ''}`} onClick={() => setAutoPlay(p => !p)} disabled={isComplete} title={autoPlay ? 'Pause auto-run' : 'Auto-run'}>
+              {autoPlay ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+            <button id="autoscroll-btn" className={`btn-icon ${autoScroll ? 'active' : ''}`} onClick={() => setAutoScroll(p => !p)} title={`Follow newest turn: ${autoScroll ? 'on' : 'off'}`}>
+              <ArrowDownToLine size={15} />
+            </button>
+            <button
+              id="verdict-btn"
+              className={`btn-outline ${isComplete ? 'active' : ''}`}
+              onClick={() => (session.summary ? setActiveSummary(session.summary) : handleFetchSummary())}
+              disabled={isSummarizing}
+            >
+              <Scale size={14} /> {isSummarizing ? 'Writing…' : 'Verdict'}
+            </button>
+            <button id="reset-btn" className="btn-icon" onClick={handleReset} title="New debate">
+              <RotateCcw size={15} />
+            </button>
           </div>
         </div>
-
-        
-        <div style={{ maxWidth: 1180, margin: '0 auto', paddingBottom: 12, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-secondary)' }}>
-          <span className="live-dot" />
-          session live — {formatModelName(propModelName)} × {formatModelName(oppModelName)} · MCTS + propositional resolution
+        <div className="arena-subbar">
+          <span><span className="live-dot" />{formatModelName(session.proposer_model)} vs {formatModelName(session.opponent_model)}</span>
+          <Scoreboard turns={turns} />
+          <ThemeSwitcher />
         </div>
       </header>
 
-      
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '72px 48px 88px', position: 'relative', zIndex: 10 }}>
-
+      <main style={{ maxWidth: 1180, margin: '0 auto', padding: 'clamp(32px, 6vw, 64px) clamp(16px, 4vw, 48px) 96px' }}>
         {turns.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '120px 0', color: 'var(--ink-faint)', fontFamily: 'var(--mono)', fontSize: 12 }}>
-            Click "Next turn" to begin the debate.
+            {session.fact_base?.length || 0} facts loaded. Press “Next turn” to hear the Proposer's opening.
           </div>
         ) : (
-          <div style={{ position: 'relative' }}>
-            
-            <div style={{
-              position: 'absolute',
-              left: '50%',
-              top: 24,
-              bottom: 24,
-              width: 1,
-              backgroundColor: 'var(--border-strong)',
-              transform: 'translateX(-50%)',
-              zIndex: 0,
-              transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-            }} />
+          <div className="timeline" ref={timelineRef}>
+            <div className="timeline-spine" />
+            <LinkArcs turns={turns} rowsRef={rowsRef} containerRef={timelineRef} hovered={hovered} />
+            {turns.map((turn, idx) => (
+              <React.Fragment key={turn.turn_number}>
+                <ClaimEntry
+                  turn={turn}
+                  isLatest={idx === turns.length - 1}
+                  modelName={turn.claim.speaker === 'agent_a' ? session.proposer_model : session.opponent_model}
+                  registerRow={registerRow}
+                  onJump={jumpTo}
+                  onHover={setHovered}
+                  flash={flashTurn === turn.turn_number}
+                  linked={linkedTo.has(turn.turn_number)}
+                />
+                {(turn.claim.refutes_opponent || turn.claim.is_contradicted) && <ProofEntry turn={turn} onJump={jumpTo} />}
+                <MctsEntry trace={turn.mcts_trace} turnNumber={turn.turn_number} />
+              </React.Fragment>
+            ))}
 
-            {turns.map((turn, idx) => {
-              const isAgentA  = turn.claim.speaker === 'agent_a';
-              const isLatest  = (idx === turns.length - 1);
-              const hasContra = turn.contradiction_result?.found;
-              const hasMcts   = !!turn.mcts_trace;
-              const cardModel = isAgentA ? propModelName : oppModelName;
-
-              return (
-                <React.Fragment key={idx}>
-                  <ClaimEntry
-                    turn={turn}
-                    isAgentA={isAgentA}
-                    isLatest={isLatest}
-                    modelName={cardModel}
-                    entryRef={isLatest ? lastTurnRef : null}
-                    autoScroll={autoScroll}
-                  />
-                  {hasContra && <ContraEntry turn={turn} />}
-                  {hasMcts   && <MctsEntry mctsTrace={turn.mcts_trace} turnNumber={turn.turn_number} />}
-                </React.Fragment>
-              );
-            })}
-
-            {/* Final Turn Transition Banner */}
-            {isComplete && !session?.summary && !isSummarizing && (
-              <div
-                style={{
-                  maxWidth: 680,
-                  margin: '40px auto 20px',
-                  padding: '22px 28px',
-                  backgroundColor: 'var(--bg-surface, #14181f)',
-                  border: '1px solid var(--border-strong, #333d4d)',
-                  borderRadius: 14,
-                  textAlign: 'center',
-                  boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-                  animation: 'dialogScaleIn 0.35s ease forwards',
-                  position: 'relative',
-                  zIndex: 10,
-                }}
-              >
-                <div style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11, color: 'var(--valid, #34d399)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-                  🏁 Final Turn Concluded · Opposer Has Rested Their Case
-                </div>
-                <div style={{ fontFamily: 'var(--serif, serif)', fontSize: 18, color: 'var(--ink-primary, #f8fafc)', marginBottom: 14 }}>
-                  All {maxTurns} debate arguments have concluded.
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => {
-                      setSummarizeCountdown(0);
-                      handleFetchSummary();
-                    }}
-                    className="btn-action"
-                    style={{ padding: '10px 24px', fontSize: 13.5, fontWeight: 600 }}
-                  >
-                    <span>⚖️ Summarize Debate & View Verdict →</span>
+            {isComplete && !session.summary && !isSummarizing && (
+              <div className="working" style={{ margin: '40px auto 0', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+                <div className="working-kicker">All {maxTurns} turns argued</div>
+                <div className="working-title" style={{ fontSize: 22 }}>The prover has scored the debate.</div>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 14 }}>
+                  <button className="btn-action" onClick={handleFetchSummary}>
+                    <Scale size={14} /> Write the verdict
                   </button>
                   {summarizeCountdown > 0 && (
-                    <span style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11.5, color: 'var(--ink-secondary, #94a3b8)' }}>
-                      Auto-summarizing in {summarizeCountdown}s…
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                      starting in {summarizeCountdown}s…
                     </span>
                   )}
                 </div>
@@ -712,26 +517,19 @@ export default function DebateArena() {
             )}
           </div>
         )}
-      </div>
+      </main>
 
-      {/* Dedicated Summarizing Loading Page */}
       {isSummarizing && !activeSummary && (
-        <DebateSummarizingOverlay
-          topic={session?.topic}
-          turnsCount={turns.length}
-          maxTurns={maxTurns}
-          proposerModel={propModelName}
-          opponentModel={oppModelName}
-          lastOpponentClaim={
-            turns.filter(t => t?.claim?.speaker === 'agent_b').pop()?.claim?.text || ''
-          }
+        <WorkingOverlay
+          kicker="Debate concluded"
+          title="Writing the verdict"
+          topic={session.topic}
+          now={`${formatModelName(session.proposer_model)} is writing the debrief`}
+          note="The winner is already decided by the resolution proofs. This step adds the written analysis and the coaching notes."
         />
       )}
 
-      {/* Summary Modal */}
-      {activeSummary && (
-        <DebateSummaryModal summary={activeSummary} onClose={() => setActiveSummary(null)} />
-      )}
+      {activeSummary && <DebateSummaryModal summary={activeSummary} onClose={() => setActiveSummary(null)} />}
     </div>
   );
 }

@@ -2,49 +2,29 @@
 routes_debate.py — FastAPI Endpoint Route Definitions for Debate Arena
 
 API Endpoints:
-- POST /start-debate        { topic: str, max_turns?: int } → generates fact base on-demand, returns debate_id
-- POST /next-turn           { debate_id: str }               → advances debate by 1 turn, returns Turn object
-- GET  /transcript/{debate_id}                                → full turn history & summary when complete
-- GET  /mcts-trace/{debate_id}/{turn_number}                  → detailed candidate scores for that turn
-- GET  /summary/{debate_id}                                   → detailed debate summary & verdict
+- POST /start-debate        { topic, max_turns?, proposer_model?, opponent_model? }
+                            → generates the fact base, seeds both KBs, returns debate_id
+- POST /next-turn           { debate_id: str }   → advances debate by 1 turn, returns Turn
+- GET  /transcript/{debate_id}                    → full turn history & summary when complete
+- GET  /mcts-trace/{debate_id}/{turn_number}      → candidate scores for that turn
+- GET  /summary/{debate_id}                       → debate summary & verdict (built on first request)
 """
 from __future__ import annotations
 
 import logging
 import uuid
+from collections import Counter
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-import numpy as np
 
-from agents.gemini_agent import GeminiAgent
-from agents.nemotron_agent import NemotronAgent
-from agents.nvidia_agent import NvidiaAgent, is_groq_model, is_openrouter_model
-from config import (
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
-    GEMINI_MODEL_FALLBACKS,
-    OPENROUTER_API_KEY,
-    OPENROUTER_BASE_URL,
-    OPENROUTER_MODEL_FALLBACKS,
-    NVIDIA_API_KEY,
-    NVIDIA_BASE_URL,
-    GROQ_API_KEY,
-    GROQ_BASE_URL,
-    GROQ_MODEL_FALLBACKS,
-    MCTS_N_SIMULATIONS,
-    FACT_BASE_SIZE,
-)
-from core.fact_generation import (
-    FactRecord,
-    extract_fact_texts,
-    extract_valid_clauses,
-    generate_fact_base,
-    generate_fact_base_openai,
-)
-from core.topic_knowledge import get_topic_grounded_facts, get_targeted_rebuttal, clean_claim_text
+from agents.debater_agent import DebaterAgent
+from config import FACT_BASE_SIZE, MCTS_N_SIMULATIONS
+from core.fact_generation import DebateFrame, extract_fact_texts, frame_debate, generate_fact_base
 from core.mcts import DebateState
-from core.retrieval import FactIndex, build_index, clear_index, make_nemotron_embed_fn
+from core.resolution import Clause, atoms_of, check_contradiction, parse_propositional_form
+from core.retrieval import build_index, clear_index, hashed_bow_embed
+from llm_client import LLMUnavailable, clean_claim_text, complete_any, humanize_logic, parse_json_payload
 from models.schemas import (
     Claim,
     ContradictionResult,
@@ -58,123 +38,73 @@ from models.schemas import (
     StartDebateResponse,
     Turn,
 )
-from tools.tool_executor import ExecutorContext, parse_propositional_form
+from tools.tool_executor import ExecutorContext
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-                                                                              
 DEBATE_SESSIONS: dict[str, dict[str, Any]] = {}
 
 
-def _fallback_embed_fn(texts: list[str]) -> np.ndarray:
-    """Local deterministic fallback embedding function when OpenRouter key is not set."""
-    vecs = []
-    for text in texts:
-        v = np.zeros(16, dtype=float)
-        for i, char in enumerate(text.lower()):
-            v[ord(char) % 16] += 1.0 / (i + 1)
-        norm = np.linalg.norm(v)
-        if norm > 0:
-            v /= norm
-        vecs.append(v)
-    return np.array(vecs)
-
-
-def _generate_fallback_facts(topic: str) -> list[FactRecord]:
-    """Generate structured fallback facts dynamically for the exact topic given."""
-    return get_topic_grounded_facts(topic)
+def _get_session(debate_id: str) -> dict[str, Any]:
+    if debate_id not in DEBATE_SESSIONS:
+        raise HTTPException(status_code=404, detail=f"Debate session '{debate_id}' not found")
+    return DEBATE_SESSIONS[debate_id]
 
 
 @router.post("/start-debate", response_model=StartDebateResponse, status_code=status.HTTP_201_CREATED)
 def start_debate(req: StartDebateRequest) -> StartDebateResponse:
     """
     Initialize a new debate session for a given topic.
-    Generates fact base on-demand for this topic, builds semantic index, and initializes debater agents.
-    Clears any prior global index to ensure complete session isolation.
+    Generates the fact base, builds the retrieval index, and seeds each agent's KB
+    with the facts on its side of the resolution.
     """
     topic = req.topic.strip()
     if not topic:
         raise HTTPException(status_code=400, detail="Topic cannot be empty")
 
+    frame = frame_debate(topic)
+    try:
+        facts, fact_model = generate_fact_base(topic, n_facts=FACT_BASE_SIZE, frame=frame)
+    except LLMUnavailable as e:
+        logger.error(f"Fact base generation failed for '{topic}': {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Could not generate a fact base: no LLM provider responded. Check the API keys in backend/.env.",
+        )
+
     debate_id = uuid.uuid4().hex[:8]
-
-                                                                                               
     clear_index()
-
-    proposer_model = req.proposer_model or "openai/gpt-oss-120b"
-    opponent_model = req.opponent_model or "deepseek/deepseek-r1-distill-llama-70b"
-
-    facts: list[FactRecord] = []
-
-    # Dedicated ultra-fast model responsible for fetching the 20 grounded facts & propositional clauses:
-    CLAUSE_FETCHING_MODEL = "openai/gpt-oss-120b"
-
-    if GROQ_API_KEY:
-        try:
-            facts = generate_fact_base_openai(topic, GROQ_API_KEY, GROQ_BASE_URL, CLAUSE_FETCHING_MODEL, n_facts=FACT_BASE_SIZE)
-        except Exception as e:
-            logger.warning(f"Groq LPU clause generation failed ({e}). Trying fallback...")
-
-    if not facts and GEMINI_API_KEY:
-        for model_name in GEMINI_MODEL_FALLBACKS:
-            try:
-                facts = generate_fact_base(topic, GEMINI_API_KEY, n_facts=FACT_BASE_SIZE, model_name=model_name)
-                if facts:
-                    break
-            except Exception as e:
-                logger.warning(f"Gemini fact generation fallback failed with '{model_name}' ({e}). Trying next model...")
-                continue
-
-    if not facts and OPENROUTER_API_KEY:
-        try:
-            facts = generate_fact_base_openai(topic, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, "meta-llama/llama-3.3-70b-instruct", n_facts=FACT_BASE_SIZE)
-        except Exception as e:
-            logger.warning(f"OpenRouter fact generation fallback failed ({e})...")
-
-    if not facts:
-        facts = _generate_fallback_facts(topic)
-
     fact_texts = extract_fact_texts(facts)
-    valid_clauses = extract_valid_clauses(facts)
+    fact_index = build_index(fact_texts, hashed_bow_embed)
 
-    # Fast, deterministic semantic fact retrieval index (instant sub-millisecond execution, zero network stalls)
-    embed_fn = _fallback_embed_fn
-    fact_index = build_index(fact_texts, embed_fn)
-
-                                                         
-    def _create_agent(agent_id: str, role: str, model_name: str):
-        if "/" in model_name or "llama" in model_name.lower() or "deepseek" in model_name.lower() or "nemotron" in model_name.lower():
-            return NvidiaAgent(agent_id=agent_id, role=role, model_name=model_name)
-        return GeminiAgent(agent_id=agent_id, role=role)
-
-                                                 
-    proposer_model = req.proposer_model or "openai/gpt-oss-120b"
-    opponent_model = req.opponent_model or "deepseek/deepseek-r1-distill-llama-70b"
-
-    agent_a = _create_agent("agent_a", "proposer", proposer_model)
-    agent_b = _create_agent("agent_b", "opponent", opponent_model)
-
-                                               
-    for clause in valid_clauses[:len(valid_clauses) // 2]:
-        agent_a.kb.tell(clause)
-    for clause in valid_clauses[len(valid_clauses) // 2:]:
-        agent_b.kb.tell(clause)
+    agent_a = DebaterAgent("agent_a", "proposer", req.proposer_model, facts, frame)
+    agent_b = DebaterAgent("agent_b", "opponent", req.opponent_model, facts, frame)
+    for agent in (agent_a, agent_b):
+        skipped = [
+            f.propositional for f in agent.side_facts
+            if f.clause is not None and not agent.kb.tell_if_consistent(f.clause, human_readable=f.text)
+        ]
+        if skipped:
+            logger.info(f"{agent.agent_id}: skipped facts that would make its KB inconsistent: {skipped}")
 
     max_turns = req.max_turns if req.max_turns and req.max_turns > 0 else 20
+    vocabulary = {a for f in facts if f.clause is not None for a in atoms_of(f.clause)}
 
-                                                                                
     DEBATE_SESSIONS[debate_id] = {
         "debate_id": debate_id,
         "topic": topic,
         "max_turns": max_turns,
-        "proposer_model": proposer_model,
-        "opponent_model": opponent_model,
+        "proposer_model": req.proposer_model,
+        "opponent_model": req.opponent_model,
+        "fact_model": fact_model,
+        "frame": frame,
         "fact_records": facts,
         "fact_texts": fact_texts,
         "fact_index": fact_index,
-        "embed_fn": embed_fn,
+        "embed_fn": hashed_bow_embed,
+        "vocabulary": vocabulary,
         "agent_a": agent_a,
         "agent_b": agent_b,
         "turns": [],
@@ -185,54 +115,78 @@ def start_debate(req: StartDebateRequest) -> StartDebateResponse:
 
     print(f"\n==================================================", flush=True)
     print(f" 🎬 DEBATE INITIALIZED: '{topic}' (ID: {debate_id}, Max Turns: {max_turns})", flush=True)
-    print(f" 🤖 Agent A: {proposer_model} | Agent B: {opponent_model}", flush=True)
-    print(f" 📚 Grounded Fact Base: {len(fact_texts)} facts loaded on-demand", flush=True)
+    print(f" ⚖️  Resolution: {frame.resolution}", flush=True)
+    print(f" 🤖 Agent A: {req.proposer_model} — {frame.proposer_position}", flush=True)
+    print(f" 🤖 Agent B: {req.opponent_model} — {frame.opponent_position}", flush=True)
+    print(f" 📚 Fact base: {len(fact_texts)} facts, {len(vocabulary)} atoms (via {fact_model})", flush=True)
     print(f"==================================================\n", flush=True)
 
     return StartDebateResponse(
         debate_id=debate_id,
         topic=topic,
         max_turns=max_turns,
-        proposer_model=proposer_model,
-        opponent_model=opponent_model,
+        proposer_model=req.proposer_model,
+        opponent_model=req.opponent_model,
         fact_base_count=len(fact_texts),
-        message=f"Debate initialized on '{topic}' ({max_turns} turns limit) with {len(fact_texts)} grounded facts.",
+        resolution=frame.resolution,
+        proposer_position=frame.proposer_position,
+        opponent_position=frame.opponent_position,
+        message=f"Debate initialized on '{topic}' ({max_turns} turns limit) with {len(fact_texts)} generated facts.",
+    )
+
+
+def _target_turn(clause: Clause | None, earlier: list[Turn], background: list[Clause]) -> int | None:
+    """
+    The most recent earlier turn whose claim, on its own (read with `background` evidence),
+    contradicts `clause`. None if no single earlier claim is responsible.
+    """
+    if clause is None or check_contradiction(background + [clause]).found:
+        return None
+    for turn in reversed(earlier):
+        target = parse_propositional_form(turn.claim.propositional_form)
+        if target is not None and check_contradiction(background + [target, clause]).found:
+            return turn.turn_number
+    return None
+
+
+def _evidence(agent: DebaterAgent) -> list[Clause]:
+    """An agent's KB minus what it has claimed in the debate."""
+    return [c for c in agent.kb.get_all_clauses() if c not in agent.claimed_clauses]
+
+
+def _contradiction(data: dict | None) -> ContradictionResult:
+    data = data or {}
+    return ContradictionResult(
+        found=data.get("found", False),
+        conflicting_clauses=[list(pair) for pair in data.get("conflicting_clauses", [])],
+        proof_steps=data.get("proof_steps", []),
     )
 
 
 @router.post("/next-turn", response_model=Turn)
 def next_turn(req: NextTurnRequest) -> Turn:
     """
-    Advance the debate by one turn.
-    Alternates between Agent A (Gemini) and Agent B (Nemotron).
-    Applies resolution contradiction detection and MCTS move selection.
-    Automatically generates debate summary when max_turns is reached.
+    Advance the debate by one turn. Agent A (proposer) speaks on odd turns, Agent B on even.
+    A claim that clashes with the opponent's KB scores for the speaker; a claim that
+    contradicts the speaker's own KB scores against them.
     """
-    debate_id = req.debate_id
-    if debate_id not in DEBATE_SESSIONS:
-        raise HTTPException(status_code=404, detail=f"Debate session '{debate_id}' not found")
-
-    session = DEBATE_SESSIONS[debate_id]
-    max_turns = session.get("max_turns", 20)
+    session = _get_session(req.debate_id)
+    max_turns = session["max_turns"]
 
     if session["status"] == "complete" or len(session["turns"]) >= max_turns:
         session["status"] = "complete"
         raise HTTPException(
             status_code=400,
-            detail=f"Debate session '{debate_id}' has reached the maximum turn limit ({max_turns} turns)."
+            detail=f"Debate session '{req.debate_id}' has reached the maximum turn limit ({max_turns} turns).",
         )
 
     turns: list[Turn] = session["turns"]
     turn_number = len(turns) + 1
+    is_agent_a = turn_number % 2 != 0
+    current_agent: DebaterAgent = session["agent_a"] if is_agent_a else session["agent_b"]
+    other_agent: DebaterAgent = session["agent_b"] if is_agent_a else session["agent_a"]
+    last_claim = turns[-1].claim if turns else None
 
-                       
-    is_agent_a = (turn_number % 2 != 0)
-    current_agent = session["agent_a"] if is_agent_a else session["agent_b"]
-    other_agent = session["agent_b"] if is_agent_a else session["agent_a"]
-
-    opponent_last_claim = turns[-1].claim.text if turns else None
-
-                                 
     ctx = ExecutorContext(
         agent_kb=current_agent.kb,
         opponent_kb=other_agent.kb,
@@ -241,92 +195,99 @@ def next_turn(req: NextTurnRequest) -> Turn:
         debate_state=session["debate_state"],
         n_simulations=MCTS_N_SIMULATIONS,
         agent_id=current_agent.agent_id,
+        opponent_replies=[f.clause for f in other_agent.side_facts if f.clause is not None],
+        vocabulary=session["vocabulary"],
+        opponent_claimed_clauses=other_agent.claimed_clauses,
+        argued_issues=dict(Counter(t.claim.issue for t in turns if t.claim.issue)),
+        recent_atom_counts=dict(Counter(
+            a for t in turns[-6:]
+            for a in atoms_of(parse_propositional_form(t.claim.propositional_form) or frozenset())
+        )),
     )
 
-                    
     res = current_agent.run_turn(
         topic=session["topic"],
-        opponent_last_claim=opponent_last_claim,
+        opponent_last_claim=last_claim.text if last_claim else None,
+        opponent_last_form=last_claim.propositional_form if last_claim else None,
         turn_number=turn_number,
         ctx=ctx,
+        history=[
+            f"Turn {t.turn_number} — {'Proposer' if t.claim.speaker == 'agent_a' else 'Opponent'}: {t.claim.text}"
+            for t in turns
+        ],
     )
 
-                                        
-    contradiction_data = res.get("contradiction_result", {})
-    contradiction_result = ContradictionResult(
-        found=contradiction_data.get("found", False),
-        conflicting_clauses=contradiction_data.get("conflicting_clauses", []),
-        proof_steps=contradiction_data.get("proof_steps", []),
-    )
+    self_result = _contradiction(res["contradiction_result"])
+    clash_result = _contradiction(res["clash_result"])
 
-    mcts_data = res.get("mcts_trace")
     mcts_trace = None
-    if mcts_data and isinstance(mcts_data, dict):
-        rejected_objs = [
-            RejectedCandidate(
-                text=r.get("text", ""),
-                score=float(r.get("score", 0.0)),
-                visit_count=int(r.get("visit_count", 0)),
-            )
-            for r in mcts_data.get("rejected_candidates", [])
-        ]
+    mcts_data = res.get("mcts_trace")
+    if mcts_data:
         mcts_trace = MCTSTrace(
-            chosen_rebuttal=mcts_data.get("chosen_rebuttal", ""),
+            chosen_rebuttal=mcts_data["chosen_rebuttal"],
+            chosen_propositional_form=mcts_data.get("chosen_propositional_form", ""),
             chosen_score=float(mcts_data.get("chosen_score", 0.0)),
-            rejected_candidates=rejected_objs,
+            chosen_visits=int(mcts_data.get("chosen_visits", 0)),
+            rejected_candidates=[
+                RejectedCandidate(
+                    text=r["text"],
+                    propositional_form=r.get("propositional_form", ""),
+                    score=float(r["score"]),
+                    visit_count=int(r["visit_count"]),
+                )
+                for r in mcts_data.get("rejected_candidates", [])
+            ],
             n_simulations=int(mcts_data.get("n_simulations", MCTS_N_SIMULATIONS)),
         )
 
-                                               
-    if contradiction_result.found:
+    state: DebateState = session["debate_state"]
+    if clash_result.found:
         if is_agent_a:
-            session["debate_state"].contradictions_forced += 1
+            state.contradictions_forced += 1
         else:
-            session["debate_state"].contradictions_received += 1
+            state.contradictions_received += 1
+    if self_result.found:
+        if is_agent_a:
+            state.contradictions_received += 1
+        else:
+            state.contradictions_forced += 1
 
-    spoken_text = res.get("claim_text", "")
-    chosen_reb = mcts_trace.chosen_rebuttal if mcts_trace else ""
-    if is_agent_a:
-        if spoken_text:
-            session["debate_state"].own_claims.append(spoken_text)
-        if chosen_reb:
-            session["debate_state"].own_claims.append(chosen_reb)
-    else:
-        if spoken_text:
-            session["debate_state"].opponent_claims.append(spoken_text)
-        if chosen_reb:
-            session["debate_state"].opponent_claims.append(chosen_reb)
-
+    claim_clause = parse_propositional_form(res["propositional_form"])
     claim_obj = Claim(
-        text=res.get("claim_text", ""),
+        text=res["claim_text"],
         speaker=current_agent.agent_id,
         turn_number=turn_number,
-        propositional_form=res.get("propositional_form", ""),
-        is_contradicted=contradiction_result.found,
+        propositional_form=res["propositional_form"],
+        issue=res.get("issue", ""),
+        is_contradicted=self_result.found,
+        refutes_opponent=clash_result.found,
+        refutes_turn=_target_turn(
+            claim_clause, [t for t in turns if t.claim.speaker == other_agent.agent_id], _evidence(other_agent)
+        ) if clash_result.found else None,
+        contradicts_turn=_target_turn(
+            claim_clause, [t for t in turns if t.claim.speaker == current_agent.agent_id], _evidence(current_agent)
+        ) if self_result.found else None,
     )
-
     turn_obj = Turn(
         turn_number=turn_number,
         claim=claim_obj,
-        contradiction_result=contradiction_result,
+        contradiction_result=self_result,
+        clash_result=clash_result,
         mcts_trace=mcts_trace,
-        mode=res.get("mode", "live"),
+        mode=res["mode"],
     )
-
     turns.append(turn_obj)
 
-    agent_model = session.get("proposer_model", "Groq Llama 3.3 70B") if is_agent_a else session.get("opponent_model", "Groq Llama 3.3 70B")
-    speaker_name = f"Agent {'A' if is_agent_a else 'B'} ({agent_model})"
+    model = res.get("model_used") or ("local fact base" if res["mode"] == "fallback" else current_agent.model_name)
     print(f"\n--------------------------------------------------", flush=True)
-    print(f" 📢 TURN #{turn_number}/{max_turns} | SPEAKER: {speaker_name}", flush=True)
+    print(f" 📢 TURN #{turn_number}/{max_turns} | Agent {'A' if is_agent_a else 'B'} ({model}) [{res['mode']}]", flush=True)
     print(f" 🗣️  Claim: {claim_obj.text}", flush=True)
-    print(f" 📐 Clause: {claim_obj.propositional_form}", flush=True)
-    print(f" ⚡ Contradiction Found: {contradiction_result.found}", flush=True)
+    print(f" 📐 Clause: {claim_obj.propositional_form}   (issue: {claim_obj.issue or '-'})", flush=True)
+    print(f" ⚡ Refutes opponent: {clash_result.found} | Self-contradiction: {self_result.found}", flush=True)
     if mcts_trace:
-        print(f" 🌳 MCTS Chosen Rebuttal: {mcts_trace.chosen_rebuttal}", flush=True)
+        print(f" 🌳 MCTS: score {mcts_trace.chosen_score} over {len(mcts_trace.rejected_candidates)} alternatives", flush=True)
     print(f"--------------------------------------------------\n", flush=True)
 
-    # 5. Check if debate limit reached
     if turn_number >= max_turns:
         session["status"] = "complete"
         print(f"\n🏁 DEBATE REACHED MAX TURNS ({turn_number}/{max_turns}) for topic: '{session['topic']}'\n", flush=True)
@@ -334,365 +295,205 @@ def next_turn(req: NextTurnRequest) -> Turn:
     return turn_obj
 
 
-def _generate_live_counter_reply(topic: str, attack_claim: str, defending_role: str, model_hint: str = None) -> str:
-    """
-    Generate a concrete, specific counter-argument for a given attack claim using ultra-fast Groq/NVIDIA endpoints.
-    Falls back to Gemini if needed.
-    """
+PLAIN_ENGLISH = (
+    "Write plain English only: never use CamelCase identifiers or logic symbols (→, ¬, ∨)."
+)
+
+
+def _sides(frame: DebateFrame) -> str:
+    return f"Resolution: '{frame.resolution}'\nProposer: {frame.proposer_position}\nOpponent: {frame.opponent_position}"
+
+
+def _counter_reply(
+    frame: DebateFrame, attack_claim: str, defending_role: str, model_hint: str | None, vocabulary: set[str]
+) -> str | None:
+    """Ask an LLM for one concrete counter-argument to `attack_claim`; None if no provider responds."""
+    attacker = "opponent" if defending_role == "proposer" else "proposer"
     prompt = (
-        f"Debate topic: '{topic}'\n"
-        f"The {('opponent' if defending_role == 'proposer' else 'proposer')} just said:\n"
-        f"\"{attack_claim}\"\n\n"
-        f"You are coaching the {defending_role}. Write ONE specific, concrete counter-argument they can say "
-        f"to directly refute this attack. The counter-argument must:\n"
-        f"- Be a specific factual or logical claim, not a vague strategy\n"
-        f"- Directly address the attack's core premise\n"
-        f"- Be 1-2 sentences, confident and direct\n"
-        f"- Read like something a skilled debater would actually say aloud\n"
-        f"Output only the counter-argument text, nothing else."
+        f"{_sides(frame)}\n\n"
+        f"The {attacker} just said:\n\"{attack_claim}\"\n\n"
+        f"You are coaching the {defending_role}, whose position is: "
+        f"{frame.proposer_position if defending_role == 'proposer' else frame.opponent_position} Write ONE specific, concrete "
+        f"counter-argument they can say aloud that refutes this attack while staying on their side. It must be a "
+        f"factual or logical claim (not a strategy), address the attack's core premise, and be 1-2 confident "
+        f"sentences. {PLAIN_ENGLISH} Output only the counter-argument text."
     )
+    try:
+        text, _ = complete_any(model_hint, "You are an expert debate coach.", prompt, timeout=15.0)
+        return humanize_logic(clean_claim_text(text), vocabulary) or None
+    except LLMUnavailable as e:
+        logger.warning(f"Counter reply generation failed ({str(e)[:200]}).")
+        return None
 
-    if OPENROUTER_API_KEY:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
-            fast_model = model_hint if (model_hint and is_openrouter_model(model_hint) and "deepseek" not in model_hint.lower()) else "meta-llama/llama-3.3-70b-instruct"
-            res = client.chat.completions.create(
-                model=fast_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=7.0,
-            )
-            msg = res.choices[0].message
-            text = (msg.content or "").strip()
-            if "</think>" in text:
-                text = text.split("</think>")[-1].strip()
-            if text:
-                return clean_claim_text(text)
-        except Exception as e:
-            logger.warning(f"OpenRouter counter reply failed ({e}).")
 
-    if GROQ_API_KEY:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
-            model_name = GROQ_MODEL_FALLBACKS[0]
-            if model_hint and is_groq_model(model_hint):
-                model_name = model_hint
-            res = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=6.0,
-            )
-            text = (res.choices[0].message.content or "").strip()
-            if text:
-                return clean_claim_text(text)
-        except Exception as e:
-            logger.warning(f"Groq counter reply failed ({e}).")
+def _summary_debrief(
+    frame: DebateFrame, turns: list[Turn], proposer_model: str, winner: str, proof_summary: str, vocabulary: set[str]
+) -> dict[str, Any]:
+    """
+    Ask the Proposer's LLM for the post-debate debrief, grounded in the transcript and the
+    resolution results. Returns {} if unavailable or unparseable.
+    """
+    def proof_note(t: Turn) -> str:
+        notes = []
+        if t.claim.refutes_opponent:
+            notes.append("proved a refutation of the other side")
+        if t.claim.is_contradicted:
+            notes.append("proved a self-contradiction")
+        return f"  [{'; '.join(notes)}]" if notes else ""
 
-    if NVIDIA_API_KEY:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
-            model_name = "nvidia/llama-3.3-nemotron-super-49b-v1"
-            if model_hint and ("/" in model_hint or "llama" in model_hint):
-                model_name = model_hint
-            res = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=6.0,
-            )
-            text = (res.choices[0].message.content or "").strip()
-            if text:
-                return clean_claim_text(text)
-        except Exception as e:
-            logger.warning(f"NVIDIA counter reply failed ({e}).")
+    history = "\n".join(
+        f"Turn {t.turn_number} — {'Proposer' if t.claim.speaker == 'agent_a' else 'Opponent'}: "
+        f"{t.claim.text}{proof_note(t)}"
+        for t in turns
+    )
+    prompt = (
+        f"{_sides(frame)}\n\n"
+        f"Transcript (bracketed notes are results from a resolution theorem prover):\n{history}\n\n"
+        f"Prover results: {proof_summary}\nWinner by those results: {winner}.\n\n"
+        f"Write the post-debate debrief. Rules:\n"
+        f"- Base every statement on the transcript and prover results above; do not claim any contradiction, "
+        f"concession or evidence that is not there.\n"
+        f"- Keep each side on its own position: Proposer advice must support the resolution, Opponent advice "
+        f"must oppose it.\n"
+        f"- Every advice field is an exact sentence a debater could say aloud — not meta-advice like "
+        f"'emphasize costs'.\n"
+        f"- {PLAIN_ENGLISH}\n\n"
+        f"Output a JSON object with exactly these keys:\n"
+        f'  "verdict_statement": 2 sentences on why the result came out as it did,\n'
+        f'  "proposer_toughest_attack": the Opponent\'s strongest claim against the Proposer (quote or close paraphrase),\n'
+        f'  "proposer_defense": what the Proposer should say to answer it,\n'
+        f'  "opponent_trap": the Proposer argument the Opponent struggled most to answer,\n'
+        f'  "opponent_escape_route": what the Opponent should say to escape that trap,\n'
+        f'  "key_proposer_points": [2-3 of the Proposer\'s strongest arguments],\n'
+        f'  "key_opponent_points": [2-3 of the Opponent\'s strongest arguments]\n'
+    )
+    try:
+        raw, _ = complete_any(proposer_model, "You are a debate analyst. Output JSON only.", prompt, json_mode=True, timeout=25.0)
+        parsed = parse_json_payload(raw)
+    except (LLMUnavailable, ValueError) as e:
+        logger.warning(f"Summary debrief failed ({str(e)[:200]}).")
+        return {}
+    if not isinstance(parsed, dict) or not parsed.get("proposer_toughest_attack"):
+        return {}
 
-    if GEMINI_API_KEY:
-        try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            for m in GEMINI_MODEL_FALLBACKS:
-                try:
-                    response = client.models.generate_content(
-                        model=m,
-                        contents=prompt,
-                    )
-                    text = (response.text or "").strip()
-                    if text:
-                        return clean_claim_text(text)
-                except Exception:
-                    continue
-        except Exception as e:
-            logger.warning(f"Gemini counter reply failed ({e}).")
+    def clean(value: Any) -> Any:
+        if isinstance(value, list):
+            return [humanize_logic(str(v), vocabulary) for v in value if str(v).strip()]
+        return humanize_logic(str(value), vocabulary) if value else ""
 
+    return {k: clean(v) for k, v in parsed.items()}
+
+
+def _strongest_claim(turns: list[Turn], speaker: str) -> Turn | None:
+    """The speaker's most damaging claim: prefer refutations of the opponent, then the longest claim."""
+    own = [t for t in turns if t.claim.speaker == speaker]
+    if not own:
+        return None
+    return max(own, key=lambda t: (t.claim.refutes_opponent, len(t.claim.text)))
+
+
+def _next_reply(turns: list[Turn], after: Turn) -> str | None:
+    """The other side's actual reply to a turn, if one was made."""
+    for t in turns:
+        if t.turn_number == after.turn_number + 1:
+            return t.claim.text
     return None
 
 
-def _parse_summary_json(text: str) -> dict[str, Any]:
-    """Parse JSON output from LLM summary debrief."""
-    try:
-        clean = text.strip()
-        if clean.startswith("```"):
-            clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        if clean.startswith("json"):
-            clean = clean[4:].strip()
-        return json.loads(clean)
-    except Exception:
-        return {}
+def _cornering_point(
+    frame: DebateFrame, turns: list[Turn], attack: Turn, session: dict[str, Any]
+) -> CorneringPoint | None:
+    """Attack → the defender's best reply → the attacker's comeback, each argued from the right side."""
+    by_proposer = attack.claim.speaker == "agent_a"
+    attacker_role, defender_role = ("proposer", "opponent") if by_proposer else ("opponent", "proposer")
+    attacker_model = session["proposer_model"] if by_proposer else session["opponent_model"]
+    defender_model = session["opponent_model"] if by_proposer else session["proposer_model"]
+    vocabulary = session["vocabulary"]
 
-
-def _generate_proposer_summary_debrief(
-    topic: str,
-    turns: list[Turn],
-    proposer_model: str,
-    winner: str,
-    score_a: float,
-) -> dict[str, Any]:
-    """
-    Call the Proposer Agent's LLM to generate an intense post-debate strategic cornering debrief.
-    Analyzes:
-    1. Where Proposer can be cornered + Proposer's counter-defense.
-    2. Where Opponent can be cornered.
-    3. How Opponent can escape if cornered in that trap.
-    """
-    recent_history = "\n".join([f"Turn #{t.turn_number} ({'Proposer' if t.claim.speaker == 'agent_a' else 'Opponent'}): {t.claim.text}" for t in turns[-8:]])
-
-    prompt = (
-        f"You are Agent A (Proposer), writing the official Post-Debate Strategic Debrief for topic: '{topic}'.\n\n"
-        f"Debate Exchanges:\n{recent_history}\n\n"
-        f"Debate Winner: {winner}.\n\n"
-        f"Perform an intense strategic analysis from the Proposer's perspective.\n"
-        f"CRITICAL DIRECTIVE ON SPECIFICITY:\n"
-        f"- Every field MUST contain the EXACT, CONCRETE debate argument or counter-claim to be spoken aloud.\n"
-        f"- DO NOT write vague meta-instructions like 'pivot to resource constraints', 'emphasize ROI', or 'focus on trade-offs'.\n"
-        f"- Instead, write the exact substantive sentence with facts and logical reasons that the debater must say.\n\n"
-        f"Output JSON format strictly as:\n"
-        f"{{\n"
-        f'  "verdict_statement": "2-sentence executive summary explaining why {winner} won on \'{topic}\'",\n'
-        f'  "proposer_cornered_analysis": "Specifically quote the toughest attack against Agent A (Proposer) and provide the EXACT substantive counter-claim Agent A must say to refute it",\n'
-        f'  "opponent_cornered_analysis": "Specifically state the exact premise that traps and corners Agent B (Opponent)",\n'
-        f'  "opponent_escape_route": "The EXACT substantive verbal rebuttal claim and evidence Agent B (Opponent) must say aloud to escape that trap",\n'
-        f'  "key_proposer_points": ["Specific Proposer Argument 1", "Specific Proposer Argument 2"],\n'
-        f'  "key_opponent_points": ["Specific Opponent Argument 1", "Specific Opponent Argument 2"]\n'
-        f"}}\n"
+    reply = _counter_reply(frame, attack.claim.text, defender_role, defender_model, vocabulary) or _next_reply(turns, attack)
+    if not reply:
+        return None
+    defender_kb = "Opponent's" if by_proposer else "Proposer's"
+    return CorneringPoint(
+        point=attack.claim.text,
+        speaker="Agent A (Proposer)" if by_proposer else "Agent B (Opponent)",
+        risk_level="HIGH THREAT" if attack.claim.refutes_opponent else "TACTICAL CORNER",
+        why_dangerous=(
+            f"Resolution proved this claim inconsistent with the {defender_kb} committed positions."
+            if attack.claim.refutes_opponent
+            else f"The {attacker_role.capitalize()}'s most developed attack; no formal contradiction was proven."
+        ),
+        best_reply=reply,
+        escape_route=_counter_reply(frame, reply, attacker_role, attacker_model, vocabulary),
     )
-
-    if OPENROUTER_API_KEY and is_openrouter_model(proposer_model):
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
-            res = client.chat.completions.create(
-                model=proposer_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=18.0,
-            )
-            msg = res.choices[0].message
-            raw = (msg.content or (msg.reasoning if hasattr(msg, "reasoning") else "") or "").strip()
-            if "</think>" in raw:
-                raw = raw.split("</think>")[-1].strip()
-            parsed = _parse_summary_json(raw)
-            if parsed and "proposer_cornered_analysis" in parsed:
-                return parsed
-        except Exception as e:
-            logger.warning(f"OpenRouter summary debrief failed ({e}).")
-
-    if is_groq_model(proposer_model) and GROQ_API_KEY:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
-            res = client.chat.completions.create(
-                model=proposer_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=12.0,
-            )
-            raw = res.choices[0].message.content or ""
-            parsed = _parse_summary_json(raw)
-            if parsed and "proposer_cornered_analysis" in parsed:
-                return parsed
-        except Exception as e:
-            logger.warning(f"Groq summary debrief failed ({e}).")
-
-    if not is_groq_model(proposer_model) and ("/" in proposer_model or "nemotron" in proposer_model.lower()) and NVIDIA_API_KEY:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
-            res = client.chat.completions.create(
-                model=proposer_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=12.0,
-            )
-            raw = res.choices[0].message.content or ""
-            parsed = _parse_summary_json(raw)
-            if parsed and "proposer_cornered_analysis" in parsed:
-                return parsed
-        except Exception as e:
-            logger.warning(f"NVIDIA summary debrief failed ({e}).")
-
-    if GROQ_API_KEY:
-        try:
-            from openai import OpenAI
-            client = OpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
-            res = client.chat.completions.create(
-                model=GROQ_MODEL_FALLBACKS[0],
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.6,
-                timeout=10.0,
-            )
-            raw = res.choices[0].message.content or ""
-            parsed = _parse_summary_json(raw)
-            if parsed and "proposer_cornered_analysis" in parsed:
-                return parsed
-        except Exception as e:
-            logger.warning(f"Groq fallback summary debrief failed ({e}).")
-
-    if GEMINI_API_KEY:
-        try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            res = client.models.generate_content(
-                model=GEMINI_MODEL_FALLBACKS[0],
-                contents=prompt,
-            )
-            raw = (res.text or "").strip()
-            parsed = _parse_summary_json(raw)
-            if parsed and "proposer_cornered_analysis" in parsed:
-                return parsed
-        except Exception as e:
-            logger.warning(f"Gemini summary debrief failed ({e}).")
-
-    return {}
 
 
 def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
-    """Generate structured DebateSummary object of completed debate session authored by Proposer Agent."""
+    """Build the DebateSummary: the verdict comes from resolution results, the prose from the Proposer's LLM."""
     topic = session["topic"]
     turns: list[Turn] = session["turns"]
-    total_turns = len(turns)
-    contradictions = sum(1 for t in turns if t.contradiction_result and t.contradiction_result.found)
 
+    def counts(speaker: str) -> tuple[int, int]:
+        own = [t for t in turns if t.claim.speaker == speaker]
+        return sum(t.claim.refutes_opponent for t in own), sum(t.claim.is_contradicted for t in own)
+
+    a_refutes, a_self = counts("agent_a")
+    b_refutes, b_self = counts("agent_b")
     state: DebateState = session["debate_state"]
-    score_a = state.heuristic_score()
+    score_a = state.contradictions_forced - state.contradictions_received
 
     if score_a > 0:
         winner = "Agent A (Proposer)"
-        reasoning = f"Agent A established stronger logical grounding on '{topic}' and maintained argument consistency."
     elif score_a < 0:
         winner = "Agent B (Opponent)"
-        reasoning = f"Agent B successfully challenged core premises on '{topic}' and presented compelling counter-evidence."
     else:
         winner = "Draw / Balanced"
-        reasoning = f"Both agents maintained strong logical rigor across all turns of the debate on '{topic}'."
+    proof_summary = (
+        f"Agent A (Proposer) proved {a_refutes} refutation(s) of the Opponent and {a_self} self-contradiction(s); "
+        f"Agent B (Opponent) proved {b_refutes} refutation(s) of the Proposer and {b_self} self-contradiction(s)."
+    )
+    reasoning = f"{proof_summary} Net logic score for Agent A: {score_a:+d}."
 
     pro_claims = [t.claim.text for t in turns if t.claim.speaker == "agent_a"]
     opp_claims = [t.claim.text for t in turns if t.claim.speaker == "agent_b"]
+    frame: DebateFrame = session["frame"]
+    debrief = _summary_debrief(frame, turns, session["proposer_model"], winner, proof_summary, session["vocabulary"])
 
-    proposer_model = session.get("proposer_model", "gemini-3.6-flash")
+    best_opp = _strongest_claim(turns, "agent_b")
+    best_pro = _strongest_claim(turns, "agent_a")
+    cornering_points = [
+        cp for cp in (
+            _cornering_point(frame, turns, best_opp, session) if best_opp else None,
+            _cornering_point(frame, turns, best_pro, session) if best_pro else None,
+        ) if cp
+    ]
 
-    debrief = _generate_proposer_summary_debrief(
-        topic=topic,
-        turns=turns,
-        proposer_model=proposer_model,
-        winner=winner,
-        score_a=score_a,
-    )
+    def attack_and_answer(attack: str, answer: str) -> str:
+        return f"Attack: \"{attack}\"\nDefense: \"{answer}\"" if attack and answer else attack
 
-    # Prepare concrete fallbacks derived from actual spoken claims or domain points
-    sample_opp_att = opp_claims[0] if opp_claims else f"Implementation overhead and practical constraints make {topic} unviable."
-    sample_pro_reb = get_targeted_rebuttal(topic, sample_opp_att, "proposer") or (pro_claims[0] if pro_claims else f"Standardized adoption of {topic} yields measurable operational efficiency and long-term utility.")
-    sample_pro_att = pro_claims[0] if pro_claims else f"Adopting {topic} provides structured advantages that outweigh incidental downsides."
-    sample_opp_reb = get_targeted_rebuttal(topic, sample_pro_att, "opponent") or (opp_claims[0] if opp_claims else f"Alternative lightweight options deliver the same benefits without the mandatory costs of {topic}.")
-
-    p_cornered = debrief.get(
-        "proposer_cornered_analysis",
-        f"Agent A (Proposer) faces risk when Opponent asserts: \"{sample_opp_att}\". Proposer's verbal defense: \"{sample_pro_reb}\""
-    )
-    o_cornered = debrief.get(
-        "opponent_cornered_analysis",
-        f"Agent B (Opponent) gets cornered when Proposer establishes: \"{sample_pro_att}\""
-    )
-    o_escape = debrief.get(
-        "opponent_escape_route",
-        f"Opponent escapes this corner by arguing: \"{sample_opp_reb}\""
-    )
-
-    cornering_points = []
-    best_opp_attack = max(opp_claims, key=len) if opp_claims else None
-    best_pro_attack = max(pro_claims, key=len) if pro_claims else None
-
-    if best_opp_attack:
-        reb_b = (
-            _generate_live_counter_reply(topic, best_opp_attack, "proposer", proposer_model)
-            or get_targeted_rebuttal(topic, best_opp_attack, "proposer")
-            or f"Empirical data demonstrates that {topic} establishes a dependable operational framework that mitigates this concern."
-        )
-        opp_followup_escape = (
-            _generate_live_counter_reply(topic, reb_b, "opponent", session.get("opponent_model"))
-            or get_targeted_rebuttal(topic, reb_b, "opponent")
-            or f"Opponent can counter-argue: \"Field studies show real-world compliance issues frequently negate these theoretical gains.\""
-        )
-        cornering_points.append(
-            CorneringPoint(
-                point=best_opp_attack,
-                speaker="Agent B (Opponent)",
-                risk_level="HIGH THREAT",
-                why_dangerous=f"Directly challenges the core practical feasibility of the proposer's argument on '{topic}'.",
-                best_reply=reb_b,
-                escape_route=opp_followup_escape,
-            )
-        )
-
-    if best_pro_attack:
-        reb_a = (
-            _generate_live_counter_reply(topic, best_pro_attack, "opponent", session.get("opponent_model"))
-            or get_targeted_rebuttal(topic, best_pro_attack, "opponent")
-            or f"This claim assumes ideal conditions that fail to hold in dynamic environments, undermining the proposer's premise."
-        )
-        cornering_points.append(
-            CorneringPoint(
-                point=best_pro_attack,
-                speaker="Agent A (Proposer)",
-                risk_level="TACTICAL CORNER",
-                why_dangerous=f"Establishes a strong proactive standard that puts the opponent on the defensive.",
-                best_reply=reb_a,
-                escape_route=o_escape,
-            )
-        )
-
-    if not cornering_points:
-        cornering_points = [
-            CorneringPoint(
-                point=sample_opp_att,
-                speaker="Agent B (Opponent)",
-                risk_level="HIGH THREAT",
-                why_dangerous="Exposes potential vulnerability if premises lack direct empirical verification.",
-                best_reply=sample_pro_reb,
-                escape_route=o_escape,
-            )
-        ]
-
-    verdict_stmt = debrief.get("verdict_statement") or f"Debate on '{topic}' concluded after {total_turns} turns. Winner: {winner}."
-    pro_pts = debrief.get("key_proposer_points") or pro_claims[:3]
-    opp_pts = debrief.get("key_opponent_points") or opp_claims[:3]
+    if debrief:
+        proposer_analysis = attack_and_answer(debrief.get("proposer_toughest_attack", ""), debrief.get("proposer_defense", ""))
+        opponent_trap = debrief.get("opponent_trap", "")
+        opponent_escape = debrief.get("opponent_escape_route", "")
+    else:
+        proposer_analysis = f"Attack: \"{best_opp.claim.text}\"" if best_opp else ""
+        opponent_trap = f"\"{best_pro.claim.text}\"" if best_pro else ""
+        opponent_escape = ""
 
     summary_obj = DebateSummary(
         debate_id=session["debate_id"],
         topic=topic,
-        total_turns=total_turns,
+        total_turns=len(turns),
         winner=winner,
         winner_reasoning=reasoning,
-        proposer_key_points=pro_pts,
-        opponent_key_points=opp_pts,
-        total_contradictions=contradictions,
-        verdict_statement=verdict_stmt,
-        proposer_cornered_analysis=p_cornered,
-        opponent_cornered_analysis=o_cornered,
-        opponent_escape_route=o_escape,
+        proposer_key_points=debrief.get("key_proposer_points") or pro_claims[:3],
+        opponent_key_points=debrief.get("key_opponent_points") or opp_claims[:3],
+        total_contradictions=a_refutes + a_self + b_refutes + b_self,
+        verdict_statement=debrief.get("verdict_statement")
+        or f"Debate on '{topic}' concluded after {len(turns)} turns. Winner: {winner}.",
+        proposer_cornered_analysis=proposer_analysis,
+        opponent_cornered_analysis=opponent_trap,
+        opponent_escape_route=opponent_escape,
         cornering_points=cornering_points,
         proposer_full_arguments=pro_claims,
         opponent_full_arguments=opp_claims,
@@ -704,16 +505,17 @@ def _synthesize_debate_summary(session: dict[str, Any]) -> DebateSummary:
 @router.get("/transcript/{debate_id}", response_model=DebateSession)
 def get_transcript(debate_id: str) -> DebateSession:
     """Retrieve full transcript and session state for a given debate_id."""
-    if debate_id not in DEBATE_SESSIONS:
-        raise HTTPException(status_code=404, detail=f"Debate session '{debate_id}' not found")
-
-    session = DEBATE_SESSIONS[debate_id]
+    session = _get_session(debate_id)
     return DebateSession(
         debate_id=session["debate_id"],
         topic=session["topic"],
-        max_turns=session.get("max_turns", 20),
-        proposer_model=session.get("proposer_model", "gemini-3.6-flash"),
-        opponent_model=session.get("opponent_model", "gemini-3.6-flash"),
+        max_turns=session["max_turns"],
+        proposer_model=session["proposer_model"],
+        opponent_model=session["opponent_model"],
+        fact_model=session["fact_model"],
+        resolution=session["frame"].resolution,
+        proposer_position=session["frame"].proposer_position,
+        opponent_position=session["frame"].opponent_position,
         fact_base=session["fact_texts"],
         turns=session["turns"],
         status=session["status"],
@@ -724,54 +526,20 @@ def get_transcript(debate_id: str) -> DebateSession:
 @router.get("/mcts-trace/{debate_id}/{turn_number}", response_model=MCTSTrace)
 def get_mcts_trace(debate_id: str, turn_number: int) -> MCTSTrace:
     """Retrieve MCTS reasoning trace for a specific turn."""
-    if debate_id not in DEBATE_SESSIONS:
-        raise HTTPException(status_code=404, detail=f"Debate session '{debate_id}' not found")
-
-    session = DEBATE_SESSIONS[debate_id]
-    turns: list[Turn] = session["turns"]
-
-    for turn in turns:
+    session = _get_session(debate_id)
+    for turn in session["turns"]:
         if turn.turn_number == turn_number:
             if turn.mcts_trace:
                 return turn.mcts_trace
             raise HTTPException(status_code=404, detail=f"MCTS was not invoked on turn {turn_number}")
-
     raise HTTPException(status_code=404, detail=f"Turn {turn_number} not found in debate '{debate_id}'")
 
 
 @router.get("/summary/{debate_id}", response_model=DebateSummary)
 def get_debate_summary(debate_id: str) -> DebateSummary:
-    """Retrieve detailed debate summary and verdict after completion."""
-    if debate_id not in DEBATE_SESSIONS:
-        raise HTTPException(status_code=404, detail=f"Debate session '{debate_id}' not found")
-
-    session = DEBATE_SESSIONS[debate_id]
+    """Retrieve the debate summary and verdict, building it on first request."""
+    session = _get_session(debate_id)
     session["status"] = "complete"
     if not session.get("summary"):
-        try:
-            session["summary"] = _synthesize_debate_summary(session)
-        except Exception as e:
-            logger.error(f"Failed to synthesize debate summary ({e}). Using resilient fallback.", exc_info=True)
-            topic = session["topic"]
-            turns = session.get("turns", [])
-            pro_claims = [t.claim.text for t in turns if t.claim.speaker == "agent_a"]
-            opp_claims = [t.claim.text for t in turns if t.claim.speaker == "agent_b"]
-            winner = "Agent A (Proposer)" if len(pro_claims) >= len(opp_claims) else "Agent B (Opponent)"
-            session["summary"] = DebateSummary(
-                debate_id=debate_id,
-                topic=topic,
-                total_turns=len(turns),
-                winner=winner,
-                winner_reasoning=f"Debate concluded after {len(turns)} turns. {winner} established strong grounded premises.",
-                proposer_key_points=pro_claims[:3] or [f"Proposer advocated for {topic}."],
-                opponent_key_points=opp_claims[:3] or [f"Opponent challenged core trade-offs of {topic}."],
-                total_contradictions=0,
-                verdict_statement=f"Debate on '{topic}' concluded across {len(turns)} rounds.",
-                proposer_cornered_analysis=f"Proposer relied on structured claims on '{topic}'.",
-                opponent_cornered_analysis=f"Opponent counter-argued against potential constraints.",
-                opponent_escape_route="Opponent can pivot to implementation challenges.",
-                cornering_points=[],
-                proposer_full_arguments=pro_claims,
-                opponent_full_arguments=opp_claims,
-            )
+        _synthesize_debate_summary(session)
     return session["summary"]

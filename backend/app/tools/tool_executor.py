@@ -1,85 +1,71 @@
 """
 tool_executor.py — Single Dispatch Point for All Tool Calls
 
-This module is the bridge between the LLM's function-calling output and the
-core algorithm implementations. When either GeminiAgent or NemotronAgent receives
-a tool_call from its respective LLM, it hands the call to execute_tool() here.
+The debater agent runs each turn as a sequence of tool calls dispatched through
+execute_tool(). Every tool maps onto a classical algorithm; none of them asks an LLM
+to make a logical decision.
 
 === DESIGN PRINCIPLES ===
 
-1. SINGLE SOURCE OF LOGIC: Both agents call execute_tool() with the same arguments.
-   There is NO tool logic duplicated in gemini_agent.py or nemotron_agent.py —
-   only LLM-specific API call code lives there.
+1. SINGLE SOURCE OF LOGIC: agents never touch the algorithms directly — they call
+   execute_tool() with a tool name and arguments.
 
-2. DEPENDENCY INJECTION: The executor needs access to runtime objects that don't
-   exist at import time — the agent's KnowledgeBase, the embed_fn, the MCTS
-   n_simulations setting, and the DebateState. These are passed in via
-   ExecutorContext (a dataclass), not as global state.
+2. DEPENDENCY INJECTION: runtime objects (both KnowledgeBases, the embed_fn, the fact
+   index, the DebateState, the opponent's reply pool and the atom vocabulary) are passed
+   in via ExecutorContext, not as global state.
 
-3. RETURN CONTRACT: execute_tool() always returns a ToolResult dataclass with:
-   - tool_name:   the name of the tool that was called
-   - success:     bool
-   - output:      the serialisable result (dict) to hand back to the LLM
-   - error:       error message string if success=False, else None
-
-   The LLM receives output as a "tool result" message in its conversation context.
-   The agent loop code also reads specific fields (e.g., output["found"]) to
-   decide whether to call select_best_rebuttal next.
+3. RETURN CONTRACT: execute_tool() always returns a ToolResult with
+   tool_name, success, output (JSON-serialisable dict) and error.
 
 === TOOL ROUTING MAP ===
 
    "retrieve_relevant_fact"  → core.retrieval.retrieve_relevant_fact()
-   "check_contradiction"     → KnowledgeBase.ask_contradiction() / ask_contradiction_of_opponent() / ask_combined_contradiction()
-   "select_best_rebuttal"    → core.mcts.select_best_rebuttal()
-   "generate_claim"          → LLM call (handled by the agent; executor records the claim into KB)
-
-=== NOTE ON generate_claim ===
-
-generate_claim is special: the LLM IS the implementation (it's the only tool where
-the LLM freely generates language). The executor does not route it to a core function.
-Instead, when generate_claim is called, the executor:
-    1. Records the propositional_form into the agent's KB via TELL.
-    2. Returns the claim context back to the agent so it can feed it into the LLM
-       as the actual generation prompt.
-
-The agent's LLM then produces the fluent natural-language text for the claim.
+   "select_best_rebuttal"    → core.mcts.MCTS with a resolution rollout (when candidates
+                               carry propositional forms)
+   "generate_claim"          → TELL the chosen clause into the speaker's KB and the
+                               opponent's view of the speaker
+   "check_contradiction"     → core.resolution via KnowledgeBase ASK:
+                                   self     — speaker's own KB
+                                   opponent — opponent claims tracked by the speaker
+                                   combined — own KB ∪ tracked opponent claims
+                                   clash    — does a new clause refute something the opponent
+                                              has claimed (read with their evidence)?
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from core.resolution import (
-    Clause,
-    atom,
-    neg_atom,
-    implication_to_clause,
-    clause_to_str,
-)
 from core.knowledge_base import KnowledgeBase
-from core.retrieval import retrieve_relevant_fact, EmbedFn, FactIndex
-from core.mcts import select_best_rebuttal, DebateState, RejectedCandidate
+from core.mcts import MCTS, DebateState, make_resolution_rollout
+from core.resolution import Clause, check_contradiction, parse_propositional_form
+from core.retrieval import EmbedFn, FactIndex, retrieve_relevant_fact
 
 
 @dataclass
 class ExecutorContext:
     """
     Runtime dependencies needed to execute tool calls.
-    One instance is created per agent per debate session and passed to execute_tool().
+    One instance is created per agent turn and passed to execute_tool().
 
     Fields:
-        agent_kb:           The owning agent's KnowledgeBase instance.
-        opponent_kb:        The opponent agent's KnowledgeBase (for cross-KB checks).
-        embed_fn:           The embedding function (Nemotron 3 Embed 1B in production,
-                            fake function in tests).
+        agent_kb:           The speaking agent's KnowledgeBase instance.
+        opponent_kb:        The opponent agent's KnowledgeBase (for clash checks).
+        embed_fn:           The embedding function used by the fact index.
         fact_index:         The pre-built FactIndex for this debate session.
-        debate_state:       Current DebateState — updated each turn, used by MCTS.
-        n_simulations:      MCTS simulation count (default from config).
-        agent_id:           "agent_a" or "agent_b" — for KB lookup.
+        debate_state:       Current DebateState — updated each turn.
+        n_simulations:      MCTS simulation count.
+        agent_id:           "agent_a" or "agent_b".
+        opponent_replies:   Clauses the opponent could plausibly assert next (MCTS rollouts).
+        vocabulary:         Atom names from the fact base (grounding bonus in MCTS).
+        claimed_clauses:    Clauses the speaker has already claimed this debate (shared,
+                            persistent set owned by the agent; MCTS penalises repeats).
+        argued_issues:      Issue → number of turns that argued it so far (novelty bonus in MCTS).
+        recent_atom_counts: Atom → uses in the last few claims (staleness penalty in MCTS).
+        opponent_claimed_clauses: Clauses the opponent has claimed this debate. A refutation
+                            must contradict one of these, not just the opponent's seeded
+                            evidence. None treats every opponent clause as claimed.
     """
     agent_kb: KnowledgeBase
     opponent_kb: KnowledgeBase
@@ -88,7 +74,12 @@ class ExecutorContext:
     debate_state: DebateState
     n_simulations: int = 50
     agent_id: str = ""
-    turn_history: list[str] = field(default_factory=list)
+    opponent_replies: list[Clause] = field(default_factory=list)
+    vocabulary: set[str] = field(default_factory=set)
+    claimed_clauses: set[Clause] = field(default_factory=set)
+    opponent_claimed_clauses: set[Clause] | None = None
+    argued_issues: dict[str, int] = field(default_factory=dict)
+    recent_atom_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -99,7 +90,7 @@ class ToolResult:
     Attributes:
         tool_name:  The name of the tool that produced this result.
         success:    True if the tool ran without error.
-        output:     Dict of results — serialisable to JSON for the LLM's tool-result message.
+        output:     Dict of results — JSON-serialisable.
         error:      Error message if success=False, else None.
     """
     tool_name: str
@@ -108,60 +99,10 @@ class ToolResult:
     error: str | None = None
 
     def to_llm_message(self) -> str:
-        """
-        Serialise to a compact string suitable for injection as a tool-result message
-        into the LLM's conversation context.
-
-        The LLM sees this after calling a tool — it reads the result and decides
-        what to do next (call another tool, or generate a claim).
-        """
-        import json
+        """Serialise to a compact JSON string."""
         if self.success:
             return json.dumps(self.output)
         return json.dumps({"error": self.error})
-
-
-def parse_propositional_form(prop_form: str) -> Clause | None:
-    """
-    Parse a propositional form string into a Clause (frozenset of literals).
-
-    Supported formats:
-        "A → B"    →  implication_to_clause("A", "B")   →  frozenset({("NOT","A"), "B"})
-        "A"        →  atom("A")                          →  frozenset({"A"})
-        "¬A"       →  neg_atom("A")                      →  frozenset({("NOT","A")})
-        "NOT A"    →  neg_atom("A")                      →  frozenset({("NOT","A")})
-
-    Returns None if the string cannot be parsed (caller should log a warning and skip).
-
-    Note: atom names must be single CamelCase tokens (no spaces within the name).
-    """
-    prop_form = prop_form.strip()
-
-                                      
-    for sep in ["→", "->"]:
-        if sep in prop_form:
-            parts = prop_form.split(sep, 1)
-            antecedent = parts[0].strip()
-            consequent = parts[1].strip()
-            if antecedent and consequent:
-                return implication_to_clause(antecedent, consequent)
-
-                               
-    if prop_form.startswith("¬"):
-        atom_name = prop_form[1:].strip()
-        if atom_name:
-            return neg_atom(atom_name)
-
-    if prop_form.upper().startswith("NOT "):
-        atom_name = prop_form[4:].strip()
-        if atom_name:
-            return neg_atom(atom_name)
-
-                           
-    if prop_form and " " not in prop_form:
-        return atom(prop_form)
-
-    return None                    
 
 
 def _handle_retrieve_relevant_fact(args: dict, ctx: ExecutorContext) -> ToolResult:
@@ -207,10 +148,10 @@ def _handle_retrieve_relevant_fact(args: dict, ctx: ExecutorContext) -> ToolResu
 
 def _handle_check_contradiction(args: dict, ctx: ExecutorContext) -> ToolResult:
     """
-    Route: check_contradiction(target, agent_id)
-    → KnowledgeBase.ask_contradiction() / ask_contradiction_of_opponent() / ask_combined_contradiction()
+    Route: check_contradiction(target, agent_id[, propositional_form])
+    → KnowledgeBase ASK methods, or a one-off clash check of a clause against the opponent's KB.
     """
-    target = args.get("target", "self")                                     
+    target = args.get("target", "self")
 
     try:
         if target == "self":
@@ -219,11 +160,34 @@ def _handle_check_contradiction(args: dict, ctx: ExecutorContext) -> ToolResult:
             result = ctx.agent_kb.ask_contradiction_of_opponent()
         elif target == "combined":
             result = ctx.agent_kb.ask_combined_contradiction()
+        elif target == "clash":
+            clause = parse_propositional_form(args.get("propositional_form", ""))
+            if clause is None:
+                return ToolResult(
+                    tool_name="check_contradiction",
+                    success=False,
+                    error="target 'clash' requires a parseable propositional_form",
+                )
+            opponent_clauses = ctx.opponent_kb.get_all_clauses()
+            background = _opponent_background(ctx)
+            claimed = [c for c in opponent_clauses if c not in background]
+            direct = check_contradiction(claimed + [clause])
+            if direct.found:
+                # Directly contradicts something the opponent said.
+                result = direct
+            elif (
+                not check_contradiction(opponent_clauses).found
+                and not check_contradiction(background + [clause]).found
+            ):
+                # Contradicts what they said read together with their evidence (but not the evidence alone).
+                result = check_contradiction(opponent_clauses + [clause])
+            else:
+                result = check_contradiction([])
         else:
             return ToolResult(
                 tool_name="check_contradiction",
                 success=False,
-                error=f"Unknown target '{target}'. Must be 'self', 'opponent', or 'combined'.",
+                error=f"Unknown target '{target}'. Must be 'self', 'opponent', 'combined', or 'clash'.",
             )
 
         return ToolResult(
@@ -249,12 +213,25 @@ def _handle_check_contradiction(args: dict, ctx: ExecutorContext) -> ToolResult:
         )
 
 
+def _opponent_background(ctx: ExecutorContext) -> list[Clause]:
+    """The opponent's KB minus what they have claimed: their seeded evidence."""
+    if ctx.opponent_claimed_clauses is None:
+        return []
+    return [c for c in ctx.opponent_kb.get_all_clauses() if c not in ctx.opponent_claimed_clauses]
+
+
 def _handle_select_best_rebuttal(args: dict, ctx: ExecutorContext) -> ToolResult:
     """
-    Route: select_best_rebuttal(candidates, agent_id, n_simulations=50)
-    → core.mcts.select_best_rebuttal()
+    Route: select_best_rebuttal(candidates, agent_id[, propositional_forms, issues,
+                                opponent_last_form, n_simulations, seed])
+    → core.mcts.MCTS
+
+    When propositional_forms (parallel to candidates) are given, MCTS simulates each
+    candidate with a resolution rollout against both KBs; otherwise it falls back to
+    the DebateState heuristic.
     """
     candidates: list[str] = args.get("candidates", [])
+    forms: list[str] = args.get("propositional_forms") or []
     n_sims = int(args.get("n_simulations", ctx.n_simulations))
 
     if not candidates:
@@ -264,24 +241,38 @@ def _handle_select_best_rebuttal(args: dict, ctx: ExecutorContext) -> ToolResult
             error="candidates list is required and must be non-empty",
         )
 
-    if len(candidates) == 1:
-                                                                                    
-        pass
+    form_by_text = dict(zip(candidates, forms))
+    rollout = None
+    if forms:
+        rollout = make_resolution_rollout(
+            candidate_clauses={text: parse_propositional_form(form) for text, form in form_by_text.items()},
+            own_clauses=ctx.agent_kb.get_all_clauses(),
+            opponent_clauses=ctx.opponent_kb.get_all_clauses(),
+            opponent_background=_opponent_background(ctx),
+            opponent_replies=ctx.opponent_replies,
+            opponent_last_clause=parse_propositional_form(args.get("opponent_last_form", "")),
+            vocabulary=ctx.vocabulary,
+            claimed_clauses=ctx.claimed_clauses,
+            candidate_issues=dict(zip(candidates, args.get("issues") or [])),
+            argued_issues=ctx.argued_issues,
+            recent_atom_counts=ctx.recent_atom_counts,
+        )
 
     try:
-        chosen, rejected = select_best_rebuttal(
-            candidates=candidates,
-            current_state=ctx.debate_state,
-            n_simulations=n_sims,
-        )
+        mcts = MCTS(n_simulations=n_sims, rollout=rollout, seed=int(args.get("seed", 0)))
+        chosen, rejected = mcts.select_best_rebuttal(candidates, ctx.debate_state)
         return ToolResult(
             tool_name="select_best_rebuttal",
             success=True,
             output={
                 "chosen_rebuttal": chosen,
+                "chosen_propositional_form": form_by_text.get(chosen, ""),
+                "chosen_score": mcts.chosen_score,
+                "chosen_visits": mcts.chosen_visits,
                 "rejected_candidates": [
                     {
                         "text": r.text,
+                        "propositional_form": form_by_text.get(r.text, ""),
                         "score": r.score,
                         "visit_count": r.visit_count,
                     }
@@ -306,15 +297,11 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
     """
     Route: generate_claim(context, direction, propositional_form, agent_id)
 
-    This tool is special — the LLM IS the implementation (it generates the language).
-    The executor's job here is:
-        1. Parse and validate the propositional_form.
-        2. TELL the clause into the agent's KB.
-        3. Return the context + direction back as the "output" so the agent can
-           use them to construct the actual LLM generation prompt.
-
-    The actual natural-language claim text is produced by the LLM AFTER it receives
-    this tool result — the agent then injects the output into a completion call.
+    Commits the chosen claim:
+        1. Records the claim text in the DebateState.
+        2. TELLs the parsed clause into the speaker's KB.
+        3. TELLs it into the opponent's view of the speaker (opponent track), so the
+           opponent's 'opponent' / 'combined' checks see it.
     """
     context = args.get("context", "")
     direction = args.get("direction", "")
@@ -327,12 +314,9 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
             error="context, direction, and propositional_form are all required",
         )
 
-                                                          
     clause = parse_propositional_form(prop_form)
-    tell_success = True
     tell_warning = None
 
-                                                    
     if ctx.agent_id == "agent_a":
         ctx.debate_state.own_claims.append(direction)
     else:
@@ -340,8 +324,9 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
 
     if clause is not None:
         ctx.agent_kb.tell(clause, human_readable=direction)
+        ctx.opponent_kb.tell_opponent(clause, human_readable=direction)
+        ctx.claimed_clauses.add(clause)
     else:
-        tell_success = False
         tell_warning = (
             f"Could not parse propositional form '{prop_form}' — "
             "claim added to history but not asserted into KB. "
@@ -350,19 +335,13 @@ def _handle_generate_claim(args: dict, ctx: ExecutorContext) -> ToolResult:
 
     return ToolResult(
         tool_name="generate_claim",
-        success=True,                                                                
+        success=True,
         output={
             "context": context,
             "direction": direction,
             "propositional_form": prop_form,
-            "kb_updated": tell_success,
+            "kb_updated": clause is not None,
             "kb_warning": tell_warning,
-            "instruction": (
-                "Now generate a fluent, debate-quality natural-language argument "
-                f"following this direction: '{direction}'. "
-                f"Ground it in the retrieved fact from context. "
-                "Be concise, logical, and directly responsive to the debate topic."
-            ),
         },
     )
 
@@ -381,18 +360,17 @@ def execute_tool(
     ctx: ExecutorContext,
 ) -> ToolResult:
     """
-    Dispatch a tool call from either LLM to the correct core function.
+    Dispatch a tool call to the correct core function.
 
     Args:
-        tool_name: The name of the tool to call (must match a key in TOOL_SCHEMAS).
-        tool_args: The arguments dict parsed from the LLM's function-call output.
+        tool_name: The name of the tool to call.
+        tool_args: The arguments dict.
         ctx:       ExecutorContext containing runtime dependencies.
 
     Returns:
         ToolResult with success/failure and serialisable output.
     """
     handler = _TOOL_HANDLERS.get(tool_name)
-
     if handler is None:
         return ToolResult(
             tool_name=tool_name,
@@ -402,7 +380,6 @@ def execute_tool(
                 f"Valid tools: {list(_TOOL_HANDLERS.keys())}"
             ),
         )
-
     return handler(tool_args, ctx)
 
 

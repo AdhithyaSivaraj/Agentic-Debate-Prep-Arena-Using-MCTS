@@ -6,24 +6,11 @@ from fastapi.testclient import TestClient
 import pytest
 
 from main import app
-from core.topic_knowledge import get_topic_grounded_facts, get_topic_proposer_points, get_topic_opponent_points
 
 
 @pytest.fixture
 def client():
     return TestClient(app)
-
-
-def test_topic_knowledge_concrete_points():
-    topic = "should AI data centres be abolished"
-    facts = get_topic_grounded_facts(topic)
-    assert len(facts) >= 4
-
-    pro_args = get_topic_proposer_points(topic)
-    con_args = get_topic_opponent_points(topic)
-
-    assert len(pro_args) >= 5
-    assert len(con_args) >= 5
 
 
 def test_clean_claims_and_max_turns_summary(client):
@@ -49,13 +36,11 @@ def test_clean_claims_and_max_turns_summary(client):
     assert over_turn_resp.status_code == 400
     assert "limit" in over_turn_resp.json()["detail"].lower() or "complete" in over_turn_resp.json()["detail"].lower()
 
-    # Check transcript session status is complete
+    # Session is complete once the turn limit is hit; the summary is built lazily by /summary
     trans_resp = client.get(f"/transcript/{debate_id}")
     assert trans_resp.status_code == 200
     assert trans_resp.json()["status"] == "complete"
-    assert trans_resp.json()["summary"] is not None
 
-    # Fetch summary endpoint directly
     summary_resp = client.get(f"/summary/{debate_id}")
     assert summary_resp.status_code == 200
     summary = summary_resp.json()
@@ -64,3 +49,33 @@ def test_clean_claims_and_max_turns_summary(client):
     assert summary["total_turns"] == 4
     assert "winner" in summary
     assert "verdict_statement" in summary
+
+    # The generated summary is now attached to the transcript
+    assert client.get(f"/transcript/{debate_id}").json()["summary"] is not None
+
+
+def test_summary_is_grounded_and_plain_english(client):
+    debate_id = client.post("/start-debate", json={"topic": "Should cities ban cars?", "max_turns": 4}).json()["debate_id"]
+    turns = [client.post("/next-turn", json={"debate_id": debate_id}).json() for _ in range(4)]
+    summary = client.get(f"/summary/{debate_id}").json()
+
+    # Debrief fields are split into attack / defense and leaked atom names are rewritten as words
+    assert summary["proposer_cornered_analysis"].startswith('Attack: "')
+    assert "\nDefense: " in summary["proposer_cornered_analysis"]
+    assert "OutcomesImprove" not in summary["proposer_cornered_analysis"]
+    assert "outcomes improve" in summary["proposer_cornered_analysis"]
+
+    # The verdict reasoning reports exactly what resolution proved
+    a_refutes = sum(t["claim"]["refutes_opponent"] for t in turns if t["claim"]["speaker"] == "agent_a")
+    assert f"Agent A (Proposer) proved {a_refutes} refutation(s)" in summary["winner_reasoning"]
+
+    # Each cornering point's escape route is the attacker's comeback, generated per point
+    for cp in summary["cornering_points"]:
+        assert cp["point"] in [t["claim"]["text"] for t in turns]
+        assert cp["escape_route"]
+
+
+def test_humanize_logic():
+    from llm_client import humanize_logic
+    out = humanize_logic("So LabSecurityWired → EthernetLatencyLow, and ¬CostsHigh.", {"LabSecurityWired", "EthernetLatencyLow", "CostsHigh"})
+    assert out == "So lab security wired leads to ethernet latency low, and not costs high."

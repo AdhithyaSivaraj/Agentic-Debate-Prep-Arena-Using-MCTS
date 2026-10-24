@@ -8,9 +8,8 @@ analogous to best-first search over a semantic space.
 === HOW IT WORKS ===
 
 1. At debate setup time, call `build_index(facts, embed_fn)` once.
-   This embeds all facts using the provided embedding function (Nemotron 3 Embed 1B
-   via OpenRouter in production) and caches the resulting vectors in the module's
-   global state.
+   This embeds all facts using the provided embedding function and caches the
+   resulting vectors in the module's global state.
 
 2. During each debate turn, call `retrieve_relevant_fact(query, top_k)`.
    This embeds the query, computes cosine similarity against all cached fact vectors,
@@ -24,8 +23,7 @@ analogous to best-first search over a semantic space.
 
 - The embedding function is INJECTED rather than hardcoded. This serves two purposes:
     (a) Tests can pass a fake embedding function without needing an API key.
-    (b) The production embedding function (Nemotron via OpenRouter) can be swapped
-        for any other embedding model without changing retrieval logic.
+    (b) The embedding model can be swapped without changing retrieval logic.
 
 - The module maintains a global cache (`_FACT_INDEX`) so embedding is done once per
   debate session, not once per retrieval call.
@@ -42,6 +40,8 @@ explicitly defensible as a Unit II algorithm in the project report.
 """
 from __future__ import annotations
 
+import re
+import zlib
 from dataclasses import dataclass
 from typing import Callable
 
@@ -55,8 +55,8 @@ EmbedFn = Callable[[list[str]], np.ndarray]
 class RetrievedFact:
     """A fact retrieved from the index, with its similarity score."""
     text: str
-    score: float                                                          
-    index: int                                                          
+    score: float
+    index: int
 
 
 class FactIndex:
@@ -76,7 +76,7 @@ class FactIndex:
                 f"facts ({len(facts)}) and vectors ({vectors.shape[0]}) must have the same length"
             )
         self.facts: list[str] = facts
-        self.vectors: np.ndarray = vectors                                    
+        self.vectors: np.ndarray = vectors
 
     def __len__(self) -> int:
         return len(self.facts)
@@ -128,11 +128,11 @@ def cosine_similarity_matrix(query_vec: np.ndarray, matrix: np.ndarray) -> np.nd
     if query_norm == 0.0:
         return np.zeros(matrix.shape[0])
 
-    row_norms = np.linalg.norm(matrix, axis=1)                             
-                                                 
+    row_norms = np.linalg.norm(matrix, axis=1)
+
     row_norms = np.where(row_norms == 0.0, 1e-10, row_norms)
 
-    dot_products = matrix @ query_vec                                       
+    dot_products = matrix @ query_vec
     return (dot_products / (row_norms * query_norm)).astype(float)
 
 
@@ -147,8 +147,7 @@ def build_index(facts: list[str], embed_fn: EmbedFn) -> FactIndex:
     Args:
         facts:    List of fact strings (the local fact base for this debate).
         embed_fn: A function that takes a list of strings and returns a 2D numpy
-                  array of embeddings. In production this calls Nemotron 3 Embed 1B
-                  via OpenRouter. In tests, a fake function can be injected.
+                  array of embeddings. In tests, a fake function can be injected.
 
     Returns:
         The constructed FactIndex (also stored globally for retrieval calls).
@@ -161,7 +160,7 @@ def build_index(facts: list[str], embed_fn: EmbedFn) -> FactIndex:
     if not facts:
         raise ValueError("build_index requires at least one fact")
 
-    vectors = embed_fn(facts)                                               
+    vectors = embed_fn(facts)
     vectors = np.array(vectors, dtype=float)
 
     _FACT_INDEX = FactIndex(facts=facts, vectors=vectors)
@@ -223,13 +222,10 @@ def retrieve_relevant_fact(
 
     fact_index = index if index is not None else get_index()
 
-                                                                             
-    query_vec = np.array(embed_fn([query]), dtype=float)[0]                           
+    query_vec = np.array(embed_fn([query]), dtype=float)[0]
 
-                                                               
-    scores = cosine_similarity_matrix(query_vec, fact_index.vectors)                     
+    scores = cosine_similarity_matrix(query_vec, fact_index.vectors)
 
-                                             
     k = min(top_k, len(fact_index))
     top_indices = np.argsort(scores)[::-1][:k]
 
@@ -243,53 +239,31 @@ def retrieve_relevant_fact(
     ]
 
 
-def make_nemotron_embed_fn(api_key: str) -> EmbedFn:
+_STOPWORDS = frozenset(
+    "a an and are as at be been but by can could do does for from has have how if in into is it its "
+    "may might more most no not of on or should so than that the their them then there these they this "
+    "to was were what when which while who will with would".split()
+)
+
+
+def _tokens(text: str) -> list[str]:
+    """Lowercase word tokens with CamelCase split (so atom names match prose) and stopwords removed."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
+    return [t for t in re.findall(r"[a-z0-9]+", spaced.lower()) if t not in _STOPWORDS and len(t) > 1]
+
+
+def hashed_bow_embed(texts: list[str], dim: int = 512) -> np.ndarray:
     """
-    Factory that returns a production embedding function using Nemotron 3 Embed 1B
-    via the OpenRouter API (OpenAI-compatible endpoint).
-
-    The returned function takes a list of strings and returns a 2D numpy array
-    of embeddings — the same signature expected by build_index() and
-    retrieve_relevant_fact().
-
-    Args:
-        api_key: OpenRouter API key (loaded from config.py / .env — never hardcoded).
-
-    Returns:
-        An EmbedFn suitable for passing to build_index() and retrieve_relevant_fact().
-
-    Note:
-        This function makes a REAL HTTP call. Do not call it in unit tests —
-        inject a fake embed_fn instead (see tests/test_retrieval.py for examples).
+    Local, deterministic embedding: hashed bag of words with sublinear term frequency,
+    L2-normalised. Cosine similarity between these vectors measures shared vocabulary,
+    which is what fact retrieval needs within a single debate's fact base.
     """
-    import httpx
-
-    OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings"
-                                                       
-    NEMOTRON_EMBED_MODEL = "nvidia/nemo-embed-qa-e5-v5"
-
-    def embed_fn(texts: list[str]) -> np.ndarray:
-        """
-        Batch-embed a list of strings using Nemotron 3 Embed 1B.
-        Returns a 2D numpy array of shape (len(texts), embedding_dim).
-        """
-        response = httpx.post(
-            OPENROUTER_EMBED_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": NEMOTRON_EMBED_MODEL,
-                "input": texts,
-            },
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-                                                                                       
-        embeddings = [item["embedding"] for item in sorted(data["data"], key=lambda x: x["index"])]
-        return np.array(embeddings, dtype=float)
-
-    return embed_fn
+    vecs = np.zeros((len(texts), dim), dtype=float)
+    for row, text in enumerate(texts):
+        for tok in _tokens(text):
+            vecs[row, zlib.crc32(tok.encode()) % dim] += 1.0
+        vecs[row] = np.log1p(vecs[row])
+        norm = np.linalg.norm(vecs[row])
+        if norm > 0:
+            vecs[row] /= norm
+    return vecs

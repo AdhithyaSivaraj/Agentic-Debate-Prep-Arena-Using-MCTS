@@ -34,14 +34,6 @@ export default {
         // Status
         contra: "var(--contra)",
         ok:     "var(--ok)",
-        // Arena aliases (for old code compatibility)
-        arena: {
-          bg:      "var(--bg-0)",
-          surface: "var(--bg-1)",
-          text:    "var(--ink-muted)",
-          muted:   "var(--ink-faint)",
-          border:  "var(--border)",
-        },
       },
       fontFamily: {
         serif: ['Fraunces', 'Georgia', 'serif'],

@@ -3,7 +3,6 @@ knowledge_base.py — KB Agent TELL/ASK Interface (Unit IV: Knowledge-Based Agen
 
 This implements the TELL/ASK pattern from the AIMA textbook (Russell & Norvig),
 directly matching the course syllabus Unit IV architecture:
-
     TELL(kb, sentence)  — assert a new clause into the KB
     ASK(kb, query)      — query the KB (here: run contradiction detection)
 
@@ -46,11 +45,10 @@ class KnowledgeBase:
                       Used for logging and debugging — not logic-critical.
         """
         self.agent_id: str = agent_id
-        self._clauses: list[Clause] = []                                               
-        self._opponent_clauses: list[Clause] = []                                         
-        self._history: list[str] = []                                                        
+        self._clauses: list[Clause] = []
+        self._opponent_clauses: list[Clause] = []
+        self._history: list[str] = []
 
-                                                                        
     def tell(self, clause: Clause, human_readable: str = "") -> None:
         """
         TELL: assert a new propositional clause into this agent's knowledge base.
@@ -79,7 +77,23 @@ class KnowledgeBase:
         if human_readable:
             self._history.append(f"[opponent] {human_readable}")
 
-                                                                        
+    def retract(self, clause: Clause) -> None:
+        """Withdraw a clause from this agent's own KB (e.g. a claim proven self-contradictory)."""
+        if clause in self._clauses:
+            self._clauses.remove(clause)
+
+    def retract_opponent(self, clause: Clause) -> None:
+        """Withdraw a clause from the opponent track."""
+        if clause in self._opponent_clauses:
+            self._opponent_clauses.remove(clause)
+
+    def tell_if_consistent(self, clause: Clause, human_readable: str = "") -> bool:
+        """TELL the clause only if the KB stays satisfiable; returns whether it was added."""
+        if check_contradiction(self._clauses + [clause]).found:
+            return False
+        self.tell(clause, human_readable)
+        return True
+
     def ask_contradiction(self) -> ContradictionResult:
         """
         ASK: run propositional resolution refutation over all clauses in this KB.
@@ -107,7 +121,6 @@ class KnowledgeBase:
         combined = self._clauses + self._opponent_clauses
         return check_contradiction(combined)
 
-                                                                        
     def get_all_clauses(self) -> list[Clause]:
         """Return a snapshot of all own clauses currently in the KB."""
         return list(self._clauses)
